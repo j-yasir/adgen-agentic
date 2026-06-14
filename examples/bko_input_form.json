@@ -1,0 +1,221 @@
+{
+  "onboarding_path": "form",
+  "company": {
+    "name": "Karakoram Kitchen",
+    "website": "https://karakoramkitchen.pk",
+    "industry": "Food & Beverage",
+    "sub_industry": "Artisanal Preserves & Condiments",
+    "business_type": "D2C",
+    "company_size": "startup",
+    "employee_range": "1-10",
+    "founded_year": 2022,
+    "headquarters": "Gilgit, Gilgit-Baltistan, Pakistan",
+    "tagline": "From the rooftop of the world, straight to your table",
+    "description": "Karakoram Kitchen handcrafts small-batch fruit preserves using wild apricots, mulberries, and cherries grown at high altitude in Gilgit-Baltistan. No artificial flavours, no preservatives — just pure mountain fruit and cane sugar, jarred within hours of harvest.",
+    "mission": "Bring the untouched flavour of Gilgit-Baltistan's mountain orchards to kitchens across Pakistan and beyond",
+    "brand_story": "Founded by Zara Baig after she realised the apricots her family had grown in Hunza for generations tasted nothing like anything sold in Karachi supermarkets. She started making small batches in her home kitchen, and when a single Instagram post went viral, she turned it into a business — keeping every jar hand-labelled and every fruit locally sourced."
+  },
+  "product": {
+    "name": "GB Mountain Fruit Preserves",
+    "product_type": "physical",
+    "description": "Small-batch fruit jams made from wild apricots, Hunza cherries, mulberries, and sea-buckthorn sourced directly from GB orchards at 2,500m altitude. Each 250g jar is cooked in small batches, hand-labelled, and shipped within 48 hours.",
+    "key_features": [
+      "100% natural — zero preservatives, zero artificial colour",
+      "High-altitude fruit harvested at peak ripeness",
+      "Small-batch production — max 200 jars per batch",
+      "Hand-labelled glass jars, gift-ready packaging",
+      "4 flavours: Wild Apricot, Hunza Cherry, Mulberry, Sea-Buckthorn"
+    ],
+    "key_benefits": [
+      "Tastes like fruit, not sugar — distinct mountain flavour you cannot find in a supermarket",
+      "No guilt — no artificial additives, lower sugar than commercial jams",
+      "A meaningful gift — every jar tells the story of GB",
+      "Supports local GB farming families directly"
+    ],
+    "unique_selling_points": [
+      "The only Pakistani jam brand sourcing exclusively from Gilgit-Baltistan high-altitude orchards",
+      "Wild apricot variety unavailable anywhere outside GB",
+      "Every batch is traceable to a named farm in Hunza or Ghizer"
+    ],
+    "pricing_model": "one_time",
+    "pricing_tier": "mid",
+    "pricing_details": "PKR 850 per 250g jar, PKR 2,200 for a gift box of 3",
+    "target_use_case": "Daily breakfast table, gifting for Eid and weddings, hotel amenity sourcing",
+    "primary_cta": "Order your jar",
+    "conversion_url": "https://karakoramkitchen.pk/shop",
+    "free_trial_available": false,
+    "demo_available": false
+  },
+  "audience": {
+    "age_range": "25-45",
+    "occupation": ["Working professional", "Homemaker", "Hotel procurement manager", "Corporate gifting buyer"],
+    "company_size_target": null,
+    "industry_vertical": null,
+    "seniority": null,
+    "geography": "Islamabad, Lahore, Karachi — online delivery nationwide Pakistan; UAE expat community",
+    "language": "English and Urdu",
+    "values": [
+      "Natural and clean ingredients",
+      "Supporting local communities",
+      "Authenticity over mass production",
+      "Pride in Pakistani heritage"
+    ],
+    "interests": [
+      "Artisanal and organic food",
+      "Pakistani travel and culture",
+      "Home cooking and brunch culture",
+      "Sustainable and ethical consumption"
+    ],
+    "personality_traits": [
+      "Conscious consumer",
+      "Gifting-oriented",
+      "Instagram-influenced",
+      "Quality over quantity"
+    ],
+    "lifestyle": "Urban, middle-to-upper-middle class, health-aware, enjoys curated food experiences",
+    "online_platforms": ["Instagram", "Facebook", "WhatsApp", "TikTok"],
+    "content_consumption": ["Food reels", "Travel vlogs from GB", "Recipe content", "Pakistani lifestyle bloggers"],
+    "purchase_behavior": "Discovers via Instagram, checks reviews on stories, buys directly via DM or website, re-orders if quality matches expectation",
+    "device_usage": "Mobile-first — 90% of purchases via smartphone",
+    "buying_trigger": "Seeing a beautiful reel of GB scenery + the product, or a trusted food creator recommending it",
+    "pain_points": [
+      "Commercial jams taste artificial and overly sweet",
+      "Cannot find authentic GB produce in city supermarkets",
+      "Hard to find a unique, meaningful gift that feels premium but personal"
+    ],
+    "desired_outcomes": [
+      "A jam that actually tastes like real fruit",
+      "Something beautiful to gift at Eid, weddings, or to take abroad as a souvenir",
+      "Feel good about what they are eating and who they are supporting"
+    ],
+    "objections": [
+      "PKR 850 feels expensive for a jam",
+      "Not sure about delivery quality — will the jar break or the jam spoil?",
+      "Never heard of this brand, is it trustworthy?"
+    ],
+    "emotional_state": "Nostalgic about Pakistan's natural beauty, slightly frustrated with mass-market options, open to discovering something special",
+    "audience_awareness_level": "problem_aware",
+    "persona_name": "Urban Lahori Foodie Ayesha"
+  },
+  "brand": {
+    "personality_traits": ["Warm", "Authentic", "Rooted", "Artisanal", "Proud"],
+    "primary_tone": "empathetic",
+    "writing_style": "conversational",
+    "pov": "first_person",
+    "language_complexity": "simple",
+    "humor_level": "light",
+    "voice_examples": [
+      "This apricot grew at 2,500 metres. Your toast deserves it.",
+      "No lab. No factory. Just fruit, sugar, and a wood-fire stove in Hunza.",
+      "We make 200 jars per batch. When they are gone, they are gone."
+    ],
+    "dos": [
+      "Tell the story behind every flavour — the farm, the valley, the family",
+      "Show the raw fruit and the landscape — GB sells itself",
+      "Use warmth and pride, never clinical health claims",
+      "Highlight scarcity — small batch, seasonal"
+    ],
+    "donts": [
+      "Never compare directly to Shezan or National Foods — different league",
+      "Do not make health claims we cannot back up",
+      "Avoid over-polished, corporate-feeling visuals — keep it real and human",
+      "Never use the word 'cheap' or 'discount' — we are premium"
+    ],
+    "primary_colors": ["#C2410C", "#78350F"],
+    "secondary_colors": ["#FEF3C7", "#FFFFFF"],
+    "font_style": "serif",
+    "imagery_style": "lifestyle photography with natural light, mountain backdrops, hands holding jars",
+    "design_aesthetic": "warm_earthy",
+    "visual_do": "Show real GB landscapes, women harvesting fruit, rustic kitchen scenes, close-up of jam texture on fresh bread",
+    "visual_dont": "No white-background product shots only, no stock photo families, no overly saturated edits"
+  },
+  "competitive": {
+    "market_position": "niche",
+    "positioning_statement": "Pakistan's only small-batch, single-origin mountain fruit preserve brand — traceable to named farms in Gilgit-Baltistan",
+    "primary_differentiators": [
+      "Single-origin: every jar traces back to a named GB farm",
+      "Wild and heritage fruit varieties unavailable in commercial production",
+      "Story-driven brand with a real founder and real community impact"
+    ],
+    "competitors": [
+      {
+        "name": "National Foods Jam",
+        "strengths": ["Massive distribution", "Price accessible", "Trusted household name"],
+        "weaknesses": ["Mass-produced, artificial flavours", "No origin story", "No premium positioning"],
+        "pricing_vs_us": "cheaper",
+        "our_differentiator": "National Foods is for the pantry. Karakoram Kitchen is for the breakfast table you are proud of."
+      },
+      {
+        "name": "Imported premium jams (Bonne Maman etc.)",
+        "strengths": ["Premium perception", "Good packaging", "Available in Carrefour"],
+        "weaknesses": ["Foreign brand, no local connection", "Expensive import pricing", "Generic European fruit"],
+        "pricing_vs_us": "pricier",
+        "our_differentiator": "Why pay import price for French strawberries when GB apricots are the best fruit on earth?"
+      }
+    ],
+    "competitive_advantages_summary": "No other Pakistani food brand sources exclusively from GB high-altitude farms and builds a full traceability and origin story around it"
+  },
+  "social_proof": {
+    "key_stats": [
+      "2,000+ jars sold in first 6 months",
+      "4.9 stars across 300+ Instagram reviews",
+      "Featured in Dawn Images food section"
+    ],
+    "testimonials": [
+      {
+        "quote": "I took three boxes to London as gifts and everyone asked me to order more. The apricot jam is unlike anything I have ever tasted.",
+        "author": "Sana M.",
+        "title": "Customer",
+        "company": null,
+        "use_in_ads": true
+      },
+      {
+        "quote": "We now stock Karakoram Kitchen at our Islamabad boutique hotel. Guests ask about it every morning.",
+        "author": "Tariq R.",
+        "title": "Hotel Owner",
+        "company": "Serena-adjacent boutique, Islamabad",
+        "use_in_ads": true
+      }
+    ],
+    "guarantees": [
+      "Full refund or replacement if your jar arrives damaged",
+      "Shipped in bubble-wrapped protective packaging with ice pack in summer"
+    ],
+    "awards": ["Dawn Images 'Best Artisanal Food Brand 2023' shortlist"],
+    "notable_clients": ["Islamabad boutique hotels", "Corporate Eid hamper buyers"]
+  },
+  "marketing": {
+    "active_platforms": ["Instagram", "WhatsApp Business"],
+    "target_platforms_for_campaigns": ["Instagram", "Facebook", "TikTok"],
+    "preferred_cta_styles": [
+      "Order yours before this batch sells out",
+      "DM us to order",
+      "Gift a jar — ships in 48 hours"
+    ],
+    "ad_style_preference": "lifestyle",
+    "primary_conversion_goal": "purchase",
+    "budget_tier": "small",
+    "average_sales_cycle": "Impulse to 48 hours — discovery and purchase in same session for most buyers",
+    "best_performing_content_types": [
+      "Short reels showing GB landscape + product",
+      "Unboxing videos from customers",
+      "Behind-the-scenes harvest footage"
+    ],
+    "emotional_hooks": ["Nostalgia", "Pride", "Warmth", "Scarcity", "Gifting joy"],
+    "value_propositions": [
+      "Real fruit from the world's most dramatic mountain valleys",
+      "A gift that tells a story — not just another box of sweets",
+      "Small batch means you are getting something special, not something mass-produced"
+    ]
+  },
+  "compliance": {
+    "industry_regulations": ["PSQCA food labelling standards Pakistan", "Halal certification required"],
+    "restricted_claims": [
+      "Cannot claim 'organic' without USDA or local certification",
+      "Cannot make specific health benefit claims without DRAP approval"
+    ],
+    "required_disclaimers": ["Best before date must appear on label", "Store in cool dry place after opening"],
+    "forbidden_topics": ["Do not reference competitor brand names directly in paid ads"],
+    "certifications_to_mention": ["Halal certified", "Made in Pakistan"]
+  }
+}
