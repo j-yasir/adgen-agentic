@@ -15,6 +15,7 @@ from api.routes import auth as auth_router
 from api.routes import admin as admin_router
 from api.routes import businesses as businesses_router
 from api.routes import campaigns as campaigns_router
+from api.routes import stream as stream_router
 
 logger = get_logger(__name__)
 
@@ -91,3 +92,4 @@ app.include_router(auth_router.router, prefix="/api/v1")
 app.include_router(admin_router.router, prefix="/api/v1")
 app.include_router(businesses_router.router, prefix="/api/v1")
 app.include_router(campaigns_router.router, prefix="/api/v1")
+app.include_router(stream_router.router, prefix="/api/v1")

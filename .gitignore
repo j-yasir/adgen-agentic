@@ -42,3 +42,6 @@ Thumbs.db
 
 # Docker volumes (if mounted locally)
 postgres_data/
+
+# Generated ad assets (local storage — replaced by R2 later)
+generations/
