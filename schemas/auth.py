@@ -11,6 +11,14 @@ class SignupRequest(BaseModel):
     email: EmailStr
     password: str
 
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"name": "Yasir Jalal", "email": "yasir@example.com", "password": "Adgen@2026#Secure"}
+            ]
+        }
+    }
+
     @field_validator("password")
     @classmethod
     def password_min_length(cls, v: str) -> str:
@@ -22,6 +30,14 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"email": "yasir@example.com", "password": "Adgen@2026#Secure"}
+            ]
+        }
+    }
 
 
 class RefreshRequest(BaseModel):
