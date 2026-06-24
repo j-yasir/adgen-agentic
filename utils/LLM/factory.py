@@ -24,5 +24,8 @@ def get_llm_model(config: LLMConfig) -> BaseChatModel:
     elif provider == LLMProvider.HUGGINGFACE.value:
         from .providers.huggingface import get_huggingface_llm
         return get_huggingface_llm(**args)
+    elif provider == LLMProvider.KIE.value:
+        from .providers.kie import get_kie_llm
+        return get_kie_llm(**args)
     else:
         raise ValueError(f"Unsupported provider: {provider}")

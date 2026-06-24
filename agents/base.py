@@ -47,8 +47,8 @@ class AgentBuilder:
 
         # ── LLM — always through utils/LLM factory ──────────────────
         config = llm_config or LLMConfig(
-            provider="gemini",
-            model_name="gemini-2.0-flash",
+            provider="kie",
+            model_name="gemini-2.5-flash",
             temperature=0.3,
             max_tokens=8000,
         )

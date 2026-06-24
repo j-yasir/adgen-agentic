@@ -5,6 +5,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
+    # kie.ai — single key for chat models + media generation
+    KIE_API_KEY: str = ""
+
     # Google AI
     GOOGLE_API_KEY: str = ""
 

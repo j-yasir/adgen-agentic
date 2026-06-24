@@ -10,8 +10,9 @@ from db.session import SessionLocal
 from repos import business_repo, campaign_repo
 from services import streaming_service
 from utils.logger import get_logger
+from utils.storage import save_generation
 
-from agents.researcher.graph import researcher_agent
+from agents.researcher.agent import researcher_agent
 from agents.strategist.graph import strategist_agent
 from agents.producer.graph import producer_agent
 from agents.auditor.graph import auditor_agent
@@ -36,6 +37,45 @@ def _emit(db, campaign_id: str, event_type: str, agent: str | None, payload: dic
         agent=agent,
         payload=payload,
     )
+
+
+async def _run_agent_streaming(agent, input: dict, campaign_id: str, agent_name: str) -> dict:
+    """Run an agent via astream_events and emit granular SSE events for each step.
+
+    Yields tool_call and tool_result events in real-time so the frontend
+    can show exactly what the agent is doing as it works.
+    Returns the final result dict (same as ainvoke would return).
+    """
+    db = _db()
+    final_result = None
+    try:
+        async for event in agent.agent.astream_events(input, version="v2"):
+            kind = event["event"]
+
+            if kind == "on_tool_start":
+                tool_input = event.get("data", {}).get("input", {})
+                _emit(db, campaign_id, "tool_call", agent_name, {
+                    "tool": event["name"],
+                    "input": str(tool_input)[:500],
+                })
+
+            elif kind == "on_tool_end":
+                tool_output = event.get("data", {}).get("output", "")
+                _emit(db, campaign_id, "tool_result", agent_name, {
+                    "tool": event["name"],
+                    "result_summary": str(tool_output)[:500],
+                })
+
+            elif kind == "on_chain_end" and event.get("name") == agent_name:
+                final_result = event.get("data", {}).get("output", {})
+
+        if final_result is None:
+            final_result = await agent.ainvoke(input)
+
+    finally:
+        db.close()
+
+    return final_result
 
 
 def _extract_json(result: Any, key: str) -> Any:
@@ -79,7 +119,7 @@ async def load_bko(state: CampaignState) -> dict:
         _emit(db, state["campaign_id"], "status_changed", "orchestrator",
               {"status": "running", "message": "BKO loaded — starting research"})
 
-        return {
+        result = {
             "bko":           business.get("bko") or {},
             "objective":     campaign["objective"],
             "platforms":     campaign["platforms"],
@@ -89,6 +129,19 @@ async def load_bko(state: CampaignState) -> dict:
             "retry_count":   campaign.get("retry_count", 0),
             "error":         None,
         }
+
+        save_generation(state["campaign_id"], "campaign_overview.json", {
+            "campaign_id":  state["campaign_id"],
+            "business_id":  state["business_id"],
+            "business_name": business.get("name"),
+            "objective":    campaign["objective"],
+            "platforms":    campaign["platforms"],
+            "funnel_stage": campaign["funnel_stage"],
+            "num_variants": campaign["num_variants"],
+            "special_brief": campaign.get("special_brief"),
+        })
+
+        return result
     finally:
         db.close()
 
@@ -96,25 +149,53 @@ async def load_bko(state: CampaignState) -> dict:
 # ── Node 2: run_researcher ────────────────────────────────────────────────────
 
 async def run_researcher(state: CampaignState) -> dict:
+    from agents.researcher.prompts import build_input
+
     db = _db()
     try:
         _emit(db, state["campaign_id"], "agent_started", "researcher",
               {"message": "Researcher agent starting"})
+    finally:
+        db.close()
 
-        result = await researcher_agent.ainvoke(dict(state))
-        research_report = _extract_json(result, "research_report") or result.get("research_report")
+    try:
+        result = await _run_agent_streaming(
+            researcher_agent,
+            {"messages": [HumanMessage(content=build_input(state))]},
+            state["campaign_id"],
+            "researcher",
+        )
 
-        _emit(db, state["campaign_id"], "agent_completed", "researcher",
-              {"message": "Research complete", "summary": str(research_report)[:200]})
+        final_msg = result["messages"][-1]
+        if isinstance(final_msg.content, str):
+            try:
+                research_report = json.loads(final_msg.content)
+            except (json.JSONDecodeError, TypeError):
+                research_report = {"raw_output": final_msg.content}
+        elif isinstance(final_msg.content, dict):
+            research_report = final_msg.content
+        else:
+            research_report = {"raw_output": str(final_msg.content)}
+
+        db2 = _db()
+        try:
+            _emit(db2, state["campaign_id"], "agent_completed", "researcher",
+                  {"message": "Research complete", "summary": str(research_report)[:200]})
+        finally:
+            db2.close()
+
+        save_generation(state["campaign_id"], "research_report.json", research_report)
 
         return {"research_report": research_report}
     except Exception as exc:
         logger.exception("Researcher agent failed campaign_id=%s", state["campaign_id"])
-        _emit(db, state["campaign_id"], "agent_error", "researcher",
-              {"error": str(exc)})
+        db3 = _db()
+        try:
+            _emit(db3, state["campaign_id"], "agent_error", "researcher",
+                  {"error": str(exc)})
+        finally:
+            db3.close()
         return {"error": str(exc)}
-    finally:
-        db.close()
 
 
 # ── Node 3: hitl_research_review ─────────────────────────────────────────────
@@ -123,25 +204,25 @@ async def hitl_research_review(state: CampaignState) -> dict:
     """
     Pause execution and wait for the human to approve the research report.
     interrupt() suspends the graph here; the node re-executes from the top on resume.
-    Emit + status update before interrupt() so they fire on BOTH passes (idempotent).
     """
     db = _db()
     try:
-        campaign_repo.update_status(
-            db, campaign_id=state["campaign_id"], status="awaiting_review",
-        )
-        _emit(db, state["campaign_id"], "hitl_required", "orchestrator", {
-            "checkpoint": "research_review",
-            "message": "Research report ready for review",
-            "data": state.get("research_report"),
-        })
+        # Only emit + update status on the FIRST pass (before interrupt).
+        # On resume, hitl_response is already set by the previous interrupt return.
+        if not state.get("hitl_response"):
+            campaign_repo.update_status(
+                db, campaign_id=state["campaign_id"], status="awaiting_review",
+            )
+            _emit(db, state["campaign_id"], "hitl_required", "orchestrator", {
+                "checkpoint": "research_review",
+                "message": "Research report ready for review",
+                "data": state.get("research_report"),
+            })
     finally:
         db.close()
 
-    # Suspend here — resumes when POST /campaigns/{id}/resume is called
     response: dict = interrupt({"checkpoint": "research_review"})
 
-    # ── Resumed ──────────────────────────────────────────────────────────────
     db2 = _db()
     try:
         campaign_repo.update_status(db2, campaign_id=state["campaign_id"], status="running")
@@ -172,6 +253,8 @@ async def run_strategist(state: CampaignState) -> dict:
         _emit(db, state["campaign_id"], "agent_completed", "strategist",
               {"message": "Strategy document ready", "summary": str(strategy_doc)[:200]})
 
+        save_generation(state["campaign_id"], "strategy_doc.json", strategy_doc)
+
         return {"strategy_doc": strategy_doc}
     except Exception as exc:
         logger.exception("Strategist agent failed campaign_id=%s", state["campaign_id"])
@@ -187,14 +270,15 @@ async def hitl_plan_approval(state: CampaignState) -> dict:
     """Pause for human approval of the strategy document."""
     db = _db()
     try:
-        campaign_repo.update_status(
-            db, campaign_id=state["campaign_id"], status="awaiting_review",
-        )
-        _emit(db, state["campaign_id"], "hitl_required", "orchestrator", {
-            "checkpoint": "plan_approval",
-            "message": "Strategy document ready for approval",
-            "data": state.get("strategy_doc"),
-        })
+        if not state.get("hitl_response"):
+            campaign_repo.update_status(
+                db, campaign_id=state["campaign_id"], status="awaiting_review",
+            )
+            _emit(db, state["campaign_id"], "hitl_required", "orchestrator", {
+                "checkpoint": "plan_approval",
+                "message": "Strategy document ready for approval",
+                "data": state.get("strategy_doc"),
+            })
     finally:
         db.close()
 
@@ -238,6 +322,8 @@ async def run_producer(state: CampaignState) -> dict:
         _emit(db, state["campaign_id"], "agent_completed", "producer",
               {"message": f"{len(assets)} asset(s) produced", "asset_count": len(assets)})
 
+        save_generation(state["campaign_id"], "generated_assets.json", {"assets": assets})
+
         return {"generated_assets": assets, "audit_results": [], "assets_approved": [], "assets_rejected": []}
     except Exception as exc:
         logger.exception("Producer agent failed campaign_id=%s", state["campaign_id"])
@@ -278,6 +364,13 @@ async def run_auditor(state: CampaignState) -> dict:
             "audit_score": audit_score,
         })
 
+        save_generation(state["campaign_id"], "audit_results.json", {
+            "audit_results":   audit_results,
+            "assets_approved": assets_approved,
+            "assets_rejected": assets_rejected,
+            "audit_score":     audit_score,
+        })
+
         return {
             "audit_results":   audit_results,
             "assets_approved": assets_approved,
@@ -298,19 +391,20 @@ async def hitl_asset_review(state: CampaignState) -> dict:
     """Final human review of produced + audited assets."""
     db = _db()
     try:
-        campaign_repo.update_status(
-            db, campaign_id=state["campaign_id"], status="awaiting_review",
-        )
-        _emit(db, state["campaign_id"], "hitl_required", "orchestrator", {
-            "checkpoint": "asset_review",
-            "message": "Assets ready for final review",
-            "data": {
-                "assets":          state.get("generated_assets"),
-                "audit_results":   state.get("audit_results"),
-                "assets_approved": state.get("assets_approved"),
-                "assets_rejected": state.get("assets_rejected"),
-            },
-        })
+        if not state.get("hitl_response"):
+            campaign_repo.update_status(
+                db, campaign_id=state["campaign_id"], status="awaiting_review",
+            )
+            _emit(db, state["campaign_id"], "hitl_required", "orchestrator", {
+                "checkpoint": "asset_review",
+                "message": "Assets ready for final review",
+                "data": {
+                    "assets":          state.get("generated_assets"),
+                    "audit_results":   state.get("audit_results"),
+                    "assets_approved": state.get("assets_approved"),
+                    "assets_rejected": state.get("assets_rejected"),
+                },
+            })
     finally:
         db.close()
 

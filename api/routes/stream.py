@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from api.dependencies import get_current_user
+from api.dependencies import get_current_user_from_query
 from config import settings
 from db.session import SessionLocal, get_db
 from repos import campaign_repo
@@ -41,7 +41,7 @@ def _open_listen_conn(dsn: str, campaign_id: str) -> psycopg2.extensions.connect
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute(f"LISTEN campaign_{campaign_id}")
+    cur.execute(f'LISTEN "campaign_{campaign_id}"')
     cur.close()
     return conn
 
@@ -133,7 +133,7 @@ async def stream_campaign(
                     "Pass the last seq you received to reconnect without losing events.",
     ),
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_from_query),
 ):
     row = campaign_repo.get_by_id(db, campaign_id, current_user["id"])
     if not row:

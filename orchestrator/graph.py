@@ -79,11 +79,7 @@ def build_graph(checkpointer) -> "CompiledStateGraph":
     g.add_edge("campaign_done",   END)
     g.add_edge("campaign_failed", END)
 
-    return g.compile(checkpointer=checkpointer, interrupt_before=[
-        "hitl_research_review",
-        "hitl_plan_approval",
-        "hitl_assets",
-    ])
+    return g.compile(checkpointer=checkpointer)
 
 
 def set_compiled_graph(graph: "CompiledStateGraph") -> None:

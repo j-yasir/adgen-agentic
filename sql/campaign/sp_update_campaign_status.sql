@@ -1,3 +1,5 @@
+DROP FUNCTION IF EXISTS sp_update_campaign_status(UUID, TEXT, JSONB, FLOAT, TEXT);
+
 CREATE OR REPLACE FUNCTION sp_update_campaign_status(
     p_campaign_id   UUID,
     p_status        TEXT,
@@ -32,15 +34,15 @@ BEGIN
     RETURN QUERY
     UPDATE campaigns SET
         status       = p_status,
-        strategy_doc = COALESCE(p_strategy_doc, strategy_doc),
-        audit_score  = COALESCE(p_audit_score,  audit_score),
-        error        = COALESCE(p_error,         error),
+        strategy_doc = COALESCE(p_strategy_doc, campaigns.strategy_doc),
+        audit_score  = COALESCE(p_audit_score,  campaigns.audit_score),
+        error        = COALESCE(p_error,         campaigns.error),
         completed_at = CASE
                            WHEN p_status IN ('done', 'failed') THEN NOW()
-                           ELSE completed_at
+                           ELSE campaigns.completed_at
                        END,
         updated_at   = NOW()
-    WHERE id = p_campaign_id
+    WHERE campaigns.id = p_campaign_id
     RETURNING
         campaigns.id, campaigns.business_id, campaigns.user_id,
         campaigns.campaign_name, campaigns.goal,

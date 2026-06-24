@@ -4,3 +4,4 @@ class LLMProvider(Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     HUGGINGFACE = "huggingface"
+    KIE = "kie"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 GENERATIONS_DIR = Path("generations")
@@ -26,6 +27,19 @@ def save_asset(
         path.write_text(data, encoding="utf-8")
     else:
         path.write_bytes(data)
+    return str(path)
+
+
+def save_generation(campaign_id: str, filename: str, data: dict) -> str:
+    """Save a JSON artifact to generations/{campaign_id}/{filename}.
+
+    Used to persist each agent's output (research_report.json,
+    strategy_doc.json, audit_results.json, etc.) alongside binary assets.
+    """
+    folder = GENERATIONS_DIR / campaign_id
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / filename
+    path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
     return str(path)
 
 
