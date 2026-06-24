@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -29,10 +29,11 @@ router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 )
 def create_campaign(
     data: CreateCampaignRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return campaign_service.create(db, data, user_id=current_user["id"])
+    return campaign_service.create(db, data, user_id=current_user["id"], background_tasks=background_tasks)
 
 
 @router.get(
@@ -69,10 +70,17 @@ def get_campaign(
 def resume_campaign(
     campaign_id: uuid.UUID,
     data: ResumeRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ):
-    return campaign_service.resume(db, campaign_id=campaign_id, user_id=current_user["id"], data=data)
+    return campaign_service.resume(
+        db,
+        campaign_id=campaign_id,
+        user_id=current_user["id"],
+        data=data,
+        background_tasks=background_tasks,
+    )
 
 
 @router.get(

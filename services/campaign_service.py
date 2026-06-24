@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import BackgroundTasks
 from sqlalchemy.orm import Session
 
 from repos import business_repo, campaign_repo
@@ -23,6 +24,7 @@ def create(
     db: Session,
     data: CreateCampaignRequest,
     user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
 ) -> CampaignResponse:
     logger.info(
         "Creating campaign for business_id=%s user_id=%s objective=%s platforms=%s",
@@ -46,10 +48,18 @@ def create(
         special_brief=data.special_brief,
     )
 
-    logger.info(
-        "Campaign created id=%s business_id=%s status=pending",
-        row["id"], data.business_id,
+    campaign_id = str(row["id"])
+    logger.info("Campaign created id=%s — scheduling pipeline", campaign_id)
+
+    # Import here to avoid circular imports at module load time
+    from tasks.campaign_runner import run_pipeline
+    background_tasks.add_task(
+        run_pipeline,
+        campaign_id=campaign_id,
+        business_id=str(data.business_id),
+        user_id=str(user_id),
     )
+
     return CampaignResponse(**row)
 
 
@@ -128,12 +138,12 @@ def resume(
     campaign_id: uuid.UUID,
     user_id: uuid.UUID,
     data: ResumeRequest,
+    background_tasks: BackgroundTasks,
 ) -> CampaignResponse:
     """
     Called when the user responds to a HITL interrupt.
-    Validates ownership and campaign state, then delegates to the orchestrator.
-    The actual graph.invoke(Command(resume=...)) call will live here once
-    the LangGraph orchestrator is wired up (Phase 3).
+    Validates ownership + campaign state, then schedules the graph resume
+    as a BackgroundTask so the HTTP response returns immediately.
     """
     logger.info(
         "Resuming campaign id=%s user_id=%s approved=%s",
@@ -148,10 +158,17 @@ def resume(
             f"Campaign {campaign_id} is not awaiting review (current status: {row['status']})"
         )
 
-    # TODO (Phase 3): invoke orchestrator
-    # from orchestrator.graph import graph
-    # graph.invoke(Command(resume={"approved": data.approved, "feedback": data.feedback}),
-    #              config={"configurable": {"thread_id": str(campaign_id)}})
+    hitl_response = {
+        "approved":  data.approved,
+        "feedback":  data.feedback,
+    }
 
-    logger.info("Campaign resume acknowledged id=%s — orchestrator not yet wired", campaign_id)
+    from tasks.campaign_runner import run_resume
+    background_tasks.add_task(
+        run_resume,
+        campaign_id=str(campaign_id),
+        hitl_response=hitl_response,
+    )
+
+    logger.info("Campaign resume scheduled campaign_id=%s", campaign_id)
     return CampaignResponse(**row)

@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from db.session import SessionLocal
 from sql import load_stored_procedures
@@ -16,12 +17,15 @@ from api.routes import admin as admin_router
 from api.routes import businesses as businesses_router
 from api.routes import campaigns as campaigns_router
 from api.routes import stream as stream_router
+from orchestrator.checkpointer import get_checkpointer_dsn
+from orchestrator.graph import build_graph, set_compiled_graph
 
 logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # ── Stored procedures ─────────────────────────────────────────────────────
     logger.info("Starting up — loading stored procedures")
     db = SessionLocal()
     try:
@@ -31,7 +35,16 @@ async def lifespan(app: FastAPI):
         logger.exception("Failed to load stored procedures on startup")
     finally:
         db.close()
-    yield
+
+    # ── LangGraph checkpointer + graph ────────────────────────────────────────
+    logger.info("Initialising LangGraph checkpointer")
+    async with AsyncPostgresSaver.from_conn_string(get_checkpointer_dsn()) as checkpointer:
+        await checkpointer.setup()
+        compiled = build_graph(checkpointer)
+        set_compiled_graph(compiled)
+        logger.info("LangGraph graph compiled and ready")
+        yield
+
     logger.info("Shutting down")
 
 
