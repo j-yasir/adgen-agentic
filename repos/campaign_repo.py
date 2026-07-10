@@ -21,8 +21,11 @@ def create(
     campaign_name: Optional[str],
     objective: str,
     platforms: list[str],
+    asset_types: list[str],
     funnel_stage: str,
     num_variants: int,
+    hero_products: list[str],
+    tone_override: Optional[str],
     special_brief: Optional[str],
 ) -> dict:
     logger.debug("Creating campaign for business_id=%s user_id=%s", business_id, user_id)
@@ -30,18 +33,22 @@ def create(
         text(
             "SELECT * FROM sp_create_campaign("
             ":user_id, :business_id, :campaign_name, :objective, "
-            ":platforms, :funnel_stage, :num_variants, :special_brief"
+            ":platforms, :asset_types, :funnel_stage, :num_variants, "
+            ":hero_products, :tone_override, :special_brief"
             ")"
         ),
         {
-            "user_id":       str(user_id),
-            "business_id":   str(business_id),
-            "campaign_name": campaign_name,
-            "objective":     objective,
-            "platforms":     platforms,
-            "funnel_stage":  funnel_stage,
-            "num_variants":  num_variants,
-            "special_brief": special_brief,
+            "user_id":        str(user_id),
+            "business_id":    str(business_id),
+            "campaign_name":  campaign_name,
+            "objective":      objective,
+            "platforms":      platforms,
+            "asset_types":    asset_types,
+            "funnel_stage":   funnel_stage,
+            "num_variants":   num_variants,
+            "hero_products":  hero_products,
+            "tone_override":  tone_override,
+            "special_brief":  special_brief,
         },
     ).mappings().first()
     db.commit()
@@ -84,6 +91,8 @@ def update_status(
     strategy_doc: Optional[dict] = None,
     audit_score: Optional[float] = None,
     error: Optional[str] = None,
+    resumable: Optional[bool] = None,
+    failed_node: Optional[str] = None,
 ) -> Optional[dict]:
     import json
     logger.debug("Updating campaign id=%s status=%s", campaign_id, status)
@@ -91,7 +100,8 @@ def update_status(
         text(
             "SELECT * FROM sp_update_campaign_status("
             ":campaign_id, :status, "
-            "CAST(:strategy_doc AS JSONB), :audit_score, :error"
+            "CAST(:strategy_doc AS JSONB), :audit_score, :error, "
+            ":resumable, :failed_node"
             ")"
         ),
         {
@@ -100,6 +110,8 @@ def update_status(
             "strategy_doc": json.dumps(strategy_doc) if strategy_doc is not None else None,
             "audit_score":  audit_score,
             "error":        error,
+            "resumable":    resumable,
+            "failed_node":  failed_node,
         },
     ).mappings().first()
     db.commit()

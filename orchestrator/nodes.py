@@ -13,13 +13,36 @@ from utils.logger import get_logger
 from utils.storage import save_generation
 
 from agents.researcher.agent import researcher_agent
-from agents.strategist.graph import strategist_agent
+from agents.strategist.graph import strategist_pipeline
+from agents.strategist.validation import parse_json_object
 from agents.producer.graph import producer_agent
 from agents.auditor.graph import auditor_agent
 
 from orchestrator.state import CampaignState
 
 logger = get_logger(__name__)
+
+
+class NodeExecutionError(Exception):
+    """Raised when an agent node's work fails, instead of swallowing the error
+    into a state dict.
+
+    Two reasons this matters:
+    1. LangGraph's node-level RetryPolicy only retries on a raised exception —
+       a node that catches its own errors and returns {"error": ...} looks
+       like a success to the graph, so RetryPolicy would never engage.
+    2. Swallowed errors previously let the graph continue to the next node
+       (e.g. hitl_research_review) with broken state instead of failing the
+       campaign — raising makes the failure visible immediately.
+
+    Carries node_name so campaign_runner can record which step needs a retry
+    (persisted as campaigns.failed_node) without a full campaign relaunch.
+    """
+
+    def __init__(self, node_name: str, original: Exception):
+        self.node_name = node_name
+        self.original = original
+        super().__init__(f"{node_name} failed: {original}")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -120,24 +143,32 @@ async def load_bko(state: CampaignState) -> dict:
               {"status": "running", "message": "BKO loaded — starting research"})
 
         result = {
-            "bko":           business.get("bko") or {},
-            "objective":     campaign["objective"],
-            "platforms":     campaign["platforms"],
-            "funnel_stage":  campaign["funnel_stage"],
-            "num_variants":  campaign["num_variants"],
-            "special_brief": campaign.get("special_brief"),
-            "retry_count":   campaign.get("retry_count", 0),
-            "error":         None,
+            "bko":            business.get("bko") or {},
+            "campaign_name":  campaign.get("campaign_name"),
+            "objective":      campaign["objective"],
+            "platforms":      campaign["platforms"],
+            "asset_types":    campaign.get("asset_types") or ["static_image", "video_ad", "email"],
+            "funnel_stage":   campaign["funnel_stage"],
+            "num_variants":   campaign["num_variants"],
+            "hero_products":  campaign.get("hero_products") or [],
+            "tone_override":  campaign.get("tone_override"),
+            "special_brief":  campaign.get("special_brief"),
+            "retry_count":    campaign.get("retry_count", 0),
+            "error":          None,
         }
 
         save_generation(state["campaign_id"], "campaign_overview.json", {
-            "campaign_id":  state["campaign_id"],
-            "business_id":  state["business_id"],
+            "campaign_id":   state["campaign_id"],
+            "business_id":   state["business_id"],
             "business_name": business.get("name"),
-            "objective":    campaign["objective"],
-            "platforms":    campaign["platforms"],
-            "funnel_stage": campaign["funnel_stage"],
-            "num_variants": campaign["num_variants"],
+            "campaign_name": campaign.get("campaign_name"),
+            "objective":     campaign["objective"],
+            "platforms":     campaign["platforms"],
+            "asset_types":   campaign.get("asset_types"),
+            "funnel_stage":  campaign["funnel_stage"],
+            "num_variants":  campaign["num_variants"],
+            "hero_products": campaign.get("hero_products"),
+            "tone_override": campaign.get("tone_override"),
             "special_brief": campaign.get("special_brief"),
         })
 
@@ -169,8 +200,9 @@ async def run_researcher(state: CampaignState) -> dict:
         final_msg = result["messages"][-1]
         if isinstance(final_msg.content, str):
             try:
-                research_report = json.loads(final_msg.content)
-            except (json.JSONDecodeError, TypeError):
+                # Fence-tolerant: the model often wraps JSON in ```json blocks.
+                research_report = parse_json_object(final_msg.content)
+            except ValueError:
                 research_report = {"raw_output": final_msg.content}
         elif isinstance(final_msg.content, dict):
             research_report = final_msg.content
@@ -195,7 +227,7 @@ async def run_researcher(state: CampaignState) -> dict:
                   {"error": str(exc)})
         finally:
             db3.close()
-        return {"error": str(exc)}
+        raise NodeExecutionError("run_researcher", exc) from exc
 
 
 # ── Node 3: hitl_research_review ─────────────────────────────────────────────
@@ -237,29 +269,54 @@ async def hitl_research_review(state: CampaignState) -> dict:
 # ── Node 4: run_strategist ────────────────────────────────────────────────────
 
 async def run_strategist(state: CampaignState) -> dict:
+    """Run the strategist pipeline (plan → produce → assemble).
+
+    The pipeline returns a schema-validated StrategyDoc or raises — the old
+    json.loads/raw_output fallback is gone by design: an invalid strategy must
+    never reach the Producer.
+
+    Revision mode: when the human rejected the strategy at hitl_plan_approval,
+    the state carries the previous strategy_doc + the rejected hitl_response,
+    and the pipeline regenerates only the assets the feedback touches.
+    """
+    hitl = state.get("hitl_response") or {}
+    is_revision = bool(state.get("strategy_doc")) and hitl.get("approved") is False
+
     db = _db()
     try:
-        _emit(db, state["campaign_id"], "agent_started", "strategist",
-              {"message": "Strategist agent starting"})
+        _emit(db, state["campaign_id"], "agent_started", "strategist", {
+            "message": ("Strategist revising strategy from reviewer feedback"
+                        if is_revision else "Strategist agent starting"),
+        })
 
-        result = await strategist_agent.ainvoke(dict(state))
-        strategy_doc = _extract_json(result, "strategy_doc") or result.get("strategy_doc")
+        def emit_event(event_type: str, payload: dict) -> None:
+            _emit(db, state["campaign_id"], event_type, "strategist", payload)
 
-        avg_score = None  # computed after audit; not available yet
+        strategy_doc = await strategist_pipeline.ainvoke(dict(state), on_event=emit_event)
+
         campaign_repo.update_status(
             db, campaign_id=state["campaign_id"], status="running",
             strategy_doc=strategy_doc,
         )
-        _emit(db, state["campaign_id"], "agent_completed", "strategist",
-              {"message": "Strategy document ready", "summary": str(strategy_doc)[:200]})
+        _emit(db, state["campaign_id"], "agent_completed", "strategist", {
+            "message": "Strategy document ready",
+            "asset_count": len(strategy_doc.get("asset_plan", [])),
+            "theme": strategy_doc.get("campaign_theme", ""),
+        })
 
         save_generation(state["campaign_id"], "strategy_doc.json", strategy_doc)
 
-        return {"strategy_doc": strategy_doc}
+        # Clear hitl_response: the revision feedback (or the research approval)
+        # is consumed, so hitl_plan_approval emits correctly on its first pass.
+        return {"strategy_doc": strategy_doc, "hitl_response": None}
     except Exception as exc:
-        logger.exception("Strategist agent failed campaign_id=%s", state["campaign_id"])
-        _emit(db, state["campaign_id"], "agent_error", "strategist", {"error": str(exc)})
-        return {"error": str(exc)}
+        logger.exception("Strategist pipeline failed campaign_id=%s", state["campaign_id"])
+        db3 = _db()
+        try:
+            _emit(db3, state["campaign_id"], "agent_error", "strategist", {"error": str(exc)})
+        finally:
+            db3.close()
+        raise NodeExecutionError("run_strategist", exc) from exc
     finally:
         db.close()
 
@@ -284,11 +341,15 @@ async def hitl_plan_approval(state: CampaignState) -> dict:
 
     response: dict = interrupt({"checkpoint": "plan_approval"})
 
+    approved = bool(response.get("approved", True)) if isinstance(response, dict) else True
     db2 = _db()
     try:
         campaign_repo.update_status(db2, campaign_id=state["campaign_id"], status="running")
-        _emit(db2, state["campaign_id"], "status_changed", "orchestrator",
-              {"status": "running", "message": "Strategy approved — producing assets"})
+        _emit(db2, state["campaign_id"], "status_changed", "orchestrator", {
+            "status": "running",
+            "message": ("Strategy approved — producing assets" if approved
+                        else "Strategy rejected — strategist revising from feedback"),
+        })
     finally:
         db2.close()
 
@@ -328,7 +389,7 @@ async def run_producer(state: CampaignState) -> dict:
     except Exception as exc:
         logger.exception("Producer agent failed campaign_id=%s", state["campaign_id"])
         _emit(db, state["campaign_id"], "agent_error", "producer", {"error": str(exc)})
-        return {"error": str(exc)}
+        raise NodeExecutionError("run_producer", exc) from exc
     finally:
         db.close()
 
@@ -380,7 +441,7 @@ async def run_auditor(state: CampaignState) -> dict:
     except Exception as exc:
         logger.exception("Auditor agent failed campaign_id=%s", state["campaign_id"])
         _emit(db, state["campaign_id"], "agent_error", "auditor", {"error": str(exc)})
-        return {"error": str(exc)}
+        raise NodeExecutionError("run_auditor", exc) from exc
     finally:
         db.close()
 

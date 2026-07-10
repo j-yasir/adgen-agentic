@@ -22,17 +22,17 @@ BEGIN
     VALUES (p_campaign_id, p_event_type, p_agent, p_payload)
     RETURNING * INTO v_row;
 
-    -- Notify SSE listeners on channel 'campaign_{id}'
+    -- Wake SSE listeners on channel 'campaign_{id}'.
+    -- Deliberately a slim envelope WITHOUT the payload: pg_notify is hard-capped
+    -- at 8000 bytes and agent payloads (research reports, strategy docs) exceed
+    -- it. Listeners re-read full rows from campaign_events by seq.
     PERFORM pg_notify(
         'campaign_' || p_campaign_id::TEXT,
         json_build_object(
-            'id',          v_row.id,
-            'campaign_id', v_row.campaign_id,
-            'seq',         v_row.seq,
-            'event_type',  v_row.event_type,
-            'agent',       v_row.agent,
-            'payload',     v_row.payload,
-            'created_at',  v_row.created_at
+            'id',         v_row.id,
+            'seq',        v_row.seq,
+            'event_type', v_row.event_type,
+            'agent',      v_row.agent
         )::TEXT
     );
 

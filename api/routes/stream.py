@@ -69,10 +69,12 @@ async def _event_generator(
         logger.debug("SSE LISTEN open for campaign_id=%s after_seq=%s", campaign_id, after_seq)
 
         # ── Catch-up: replay events already in DB ─────────────────────────────
+        last_seq = after_seq
         db = SessionLocal()
         try:
             missed = campaign_repo.get_events(db, campaign_id, after_seq=after_seq)
             for event in missed:
+                last_seq = event["seq"]
                 yield _format_sse(event)
                 if event["event_type"] in _TERMINAL_EVENTS:
                     logger.debug("Terminal event in catch-up for campaign_id=%s", campaign_id)
@@ -81,6 +83,10 @@ async def _event_generator(
             db.close()
 
         # ── Live stream via pg_notify ─────────────────────────────────────────
+        # NOTIFY carries only a slim envelope (pg_notify payloads are capped at
+        # 8000 bytes; agent payloads exceed that). It is purely a wake-up
+        # signal: on notification we re-read the full rows from the DB by seq,
+        # which also dedupes bursts of notifications into one fetch.
         last_heartbeat = loop.time()
 
         while True:
@@ -97,18 +103,26 @@ async def _event_generator(
 
             if readable:
                 conn.poll()
-                while conn.notifies:
-                    notify = conn.notifies.pop(0)
-                    yield f"data: {notify.payload}\n\n"
-                    try:
-                        event = json.loads(notify.payload)
-                        if event.get("event_type") in _TERMINAL_EVENTS:
-                            logger.debug(
-                                "Terminal event via LISTEN for campaign_id=%s", campaign_id
-                            )
-                            return
-                    except (json.JSONDecodeError, AttributeError):
-                        pass
+                if not conn.notifies:
+                    continue
+                conn.notifies.clear()
+
+                db = SessionLocal()
+                try:
+                    new_events = campaign_repo.get_events(
+                        db, campaign_id, after_seq=last_seq
+                    )
+                finally:
+                    db.close()
+
+                for event in new_events:
+                    last_seq = event["seq"]
+                    yield _format_sse(event)
+                    if event["event_type"] in _TERMINAL_EVENTS:
+                        logger.debug(
+                            "Terminal event via LISTEN for campaign_id=%s", campaign_id
+                        )
+                        return
 
     except GeneratorExit:
         logger.debug("Client disconnected from campaign_id=%s stream", campaign_id)

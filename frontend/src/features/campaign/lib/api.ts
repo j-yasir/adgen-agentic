@@ -26,6 +26,11 @@ export const campaignApi = {
       body: JSON.stringify(data),
     }),
 
+  retry: (id: string) =>
+    apiClient<CampaignResponse>(`/campaigns/${id}/retry`, {
+      method: "POST",
+    }),
+
   getEvents: (id: string, afterSeq = 0) =>
     apiClient<CampaignEvent[]>(`/campaigns/${id}/events?after_seq=${afterSeq}`),
 

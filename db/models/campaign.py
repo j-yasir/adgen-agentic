@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Text, Integer, Float, DateTime, ForeignKey, func, text, CheckConstraint
+from sqlalchemy import Text, Integer, Float, Boolean, DateTime, ForeignKey, func, text, CheckConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +27,14 @@ class Campaign(Base):
             "status IN ('pending', 'running', 'awaiting_review', 'done', 'failed')",
             name="chk_campaigns_status",
         ),
+        CheckConstraint(
+            "objective IN ('awareness', 'traffic', 'conversion', 'lead_gen', 'engagement')",
+            name="chk_campaigns_objective",
+        ),
+        CheckConstraint(
+            "funnel_stage IN ('tofu', 'mofu', 'bofu', 'balanced')",
+            name="chk_campaigns_funnel_stage",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -47,11 +55,24 @@ class Campaign(Base):
     goal: Mapped[str] = mapped_column(Text, nullable=False)
     platforms: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     asset_formats: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    campaign_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    objective: Mapped[str] = mapped_column(Text, nullable=False, default="awareness")
+    funnel_stage: Mapped[str] = mapped_column(Text, nullable=False, default="balanced")
+    num_variants: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    special_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
+    asset_types: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
+    hero_products: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=True)
+    tone_override: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     strategy_doc: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     audit_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Durable-execution retry metadata (see db/migrations 7a3f9c2e5b1d): set when
+    # a node fails after exhausting its automatic RetryPolicy, so /retry can
+    # re-enter the LangGraph checkpoint instead of relaunching the campaign.
+    resumable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    failed_node: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -83,6 +83,32 @@ def resume_campaign(
     )
 
 
+@router.post(
+    "/{campaign_id}/retry",
+    response_model=CampaignResponse,
+    summary="Retry a campaign that failed at a node, resuming from its last checkpoint",
+    description=(
+        "Only available when the campaign is `status=failed` and `resumable=true` — "
+        "i.e. the failure was a node error (network/provider blip) after automatic "
+        "retries were exhausted, not a permanent error. Re-enters the LangGraph "
+        "checkpoint at the failed node; steps that already completed (research, "
+        "strategy) are not re-run."
+    ),
+)
+def retry_campaign(
+    campaign_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return campaign_service.retry(
+        db,
+        campaign_id=campaign_id,
+        user_id=current_user["id"],
+        background_tasks=background_tasks,
+    )
+
+
 @router.get(
     "/{campaign_id}/events",
     response_model=list[CampaignEventResponse],

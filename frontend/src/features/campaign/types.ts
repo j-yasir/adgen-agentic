@@ -6,14 +6,19 @@ export type CampaignResponse = {
   goal: string;
   objective: string;
   platforms: string[];
+  asset_types: string[];
   funnel_stage: string;
   num_variants: number;
+  hero_products: string[];
+  tone_override: string | null;
   special_brief: string | null;
   status: string;
   strategy_doc: Record<string, unknown> | null;
   retry_count: number;
   audit_score: number | null;
   error: string | null;
+  resumable: boolean;
+  failed_node: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -29,8 +34,11 @@ export type CreateCampaignRequest = {
   campaign_name?: string;
   objective: "awareness" | "traffic" | "conversion" | "lead_gen" | "engagement";
   platforms: string[];
+  asset_types: string[];
   funnel_stage: "tofu" | "mofu" | "bofu" | "balanced";
   num_variants: number;
+  hero_products: string[];
+  tone_override?: "urgent" | "playful" | "bold" | "emotional" | "professional" | "conversational";
   special_brief?: string;
 };
 

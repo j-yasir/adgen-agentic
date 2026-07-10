@@ -40,3 +40,14 @@ export function useResumeCampaign() {
     },
   });
 }
+
+export function useRetryCampaign() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => campaignApi.retry(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: ["campaign", id] });
+      queryClient.invalidateQueries({ queryKey: ["campaign-events", id] });
+    },
+  });
+}

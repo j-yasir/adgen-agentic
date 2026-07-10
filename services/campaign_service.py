@@ -43,8 +43,11 @@ def create(
         campaign_name=data.campaign_name,
         objective=data.objective,
         platforms=list(data.platforms),
+        asset_types=list(data.asset_types),
         funnel_stage=data.funnel_stage,
         num_variants=data.num_variants,
+        hero_products=list(data.hero_products),
+        tone_override=data.tone_override,
         special_brief=data.special_brief,
     )
 
@@ -172,3 +175,44 @@ def resume(
 
     logger.info("Campaign resume scheduled campaign_id=%s", campaign_id)
     return CampaignResponse(**row)
+
+
+def retry(
+    db: Session,
+    campaign_id: uuid.UUID,
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+) -> CampaignResponse:
+    """
+    Retry a campaign that failed at a node after its automatic RetryPolicy
+    was exhausted (see orchestrator.nodes.NodeExecutionError). Re-enters the
+    LangGraph checkpoint from the failed node onward — steps that already
+    completed (research, strategy) are not re-run, so this is far cheaper
+    than relaunching the whole campaign.
+
+    Distinct from resume(): resume() answers a paused interrupt() (HITL);
+    retry() re-executes after an exception. Only offered when the failure
+    was flagged resumable (transient node failure, not a permanent one like
+    a missing business record).
+    """
+    logger.info("Retrying campaign id=%s user_id=%s", campaign_id, user_id)
+    row = campaign_repo.get_by_id(db, campaign_id, user_id)
+    if not row:
+        raise NotFoundError(f"Campaign {campaign_id} not found")
+
+    if row["status"] != "failed" or not row["resumable"]:
+        raise ForbiddenError(
+            f"Campaign {campaign_id} is not in a retryable state "
+            f"(status={row['status']}, resumable={row['resumable']})"
+        )
+
+    # Flip to 'running' synchronously (not in the background task) so a
+    # double-click can't schedule two concurrent retries of the same thread,
+    # and the SP's status='running' case clears resumable/failed_node/error.
+    updated = campaign_repo.update_status(db, campaign_id=campaign_id, status="running")
+
+    from tasks.campaign_runner import run_retry
+    background_tasks.add_task(run_retry, campaign_id=str(campaign_id))
+
+    logger.info("Campaign retry scheduled campaign_id=%s failed_node=%s", campaign_id, row["failed_node"])
+    return CampaignResponse(**updated)

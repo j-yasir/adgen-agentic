@@ -3,6 +3,29 @@ from __future__ import annotations
 from orchestrator.state import CampaignState
 
 
+def route_after_strategist(state: CampaignState) -> str:
+    """
+    The strategist pipeline validates its output and raises on failure — the
+    node converts that into state.error. An invalid strategy must never reach
+    the plan-approval checkpoint (or the Producer), so errors fail the campaign.
+    """
+    if state.get("error"):
+        return "campaign_failed"
+    return "hitl_plan_approval"
+
+
+def route_after_plan_approval(state: CampaignState) -> str:
+    """
+    After the plan-approval HITL: approved → Producer; rejected → back to the
+    Strategist, which revises only the assets the feedback touches (the
+    rejected hitl_response + previous strategy_doc are both in state).
+    """
+    response = state.get("hitl_response") or {}
+    if response.get("approved") is False:
+        return "run_strategist"
+    return "run_producer"
+
+
 def route_after_audit(state: CampaignState) -> str:
     """
     After the Auditor runs, decide whether to retry with the Producer or

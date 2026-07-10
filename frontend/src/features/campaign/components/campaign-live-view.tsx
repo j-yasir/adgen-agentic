@@ -1,14 +1,14 @@
 "use client";
 
 import { useCampaignStream } from "../hooks/use-campaign-stream";
-import { useCampaign, useCampaignAssets, useResumeCampaign } from "../hooks/use-campaigns";
+import { useCampaign, useCampaignAssets, useResumeCampaign, useRetryCampaign } from "../hooks/use-campaigns";
 import { PipelineStepper } from "./pipeline-stepper";
 import { ActivityFeed } from "./activity-feed";
 import { ReviewPanel } from "./hitl/review-panel";
 import { AssetGallery } from "./asset-gallery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Clock } from "lucide-react";
+import { ArrowLeft, Clock, RotateCw } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useEffect, useState } from "react";
@@ -60,6 +60,7 @@ export function CampaignLiveView({ campaignId }: { campaignId: string }) {
   const { data: campaign } = useCampaign(campaignId);
   const { data: assets, refetch: refetchAssets } = useCampaignAssets(campaignId);
   const resumeCampaign = useResumeCampaign();
+  const retryCampaign = useRetryCampaign();
 
   const { data: restEvents } = useQuery({
     queryKey: ["campaign-events", campaignId],
@@ -111,6 +112,15 @@ export function CampaignLiveView({ campaignId }: { campaignId: string }) {
       toast.success(approved ? "Approved — pipeline resuming" : "Rejected — pipeline will redo");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Resume failed");
+    }
+  }
+
+  async function handleRetry() {
+    try {
+      await retryCampaign.mutateAsync(campaignId);
+      toast.success("Retrying from where it left off");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Retry failed");
     }
   }
 
@@ -206,6 +216,26 @@ export function CampaignLiveView({ campaignId }: { campaignId: string }) {
               <p className="text-sm text-muted-foreground max-w-md text-center">
                 {campaign?.error ?? "An unexpected error occurred during processing."}
               </p>
+              {campaign?.failed_node && (
+                <p className="text-xs text-muted-foreground">
+                  Failed at: <span className="font-mono">{campaign.failed_node}</span>
+                </p>
+              )}
+              {campaign?.resumable ? (
+                <Button
+                  variant="outline"
+                  className="border-red-500/30 text-red-400 hover:bg-red-500/10 mt-2"
+                  onClick={handleRetry}
+                  disabled={retryCampaign.isPending}
+                >
+                  <RotateCw className={cn("mr-2 h-4 w-4", retryCampaign.isPending && "animate-spin")} />
+                  {retryCampaign.isPending ? "Retrying..." : "Retry from last checkpoint"}
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground max-w-md text-center mt-1">
+                  This failure isn&apos;t automatically retryable — please launch a new campaign.
+                </p>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">

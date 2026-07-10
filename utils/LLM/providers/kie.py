@@ -1,7 +1,44 @@
 import os
+from typing import Any
+
 from langchain_openai import ChatOpenAI
 
 KIE_BASE = "https://api.kie.ai"
+
+# kie.ai rejects any request whose content contains a literal "&" — the API
+# returns a 400 with choices=null and the misleading message "The server is
+# currently being maintained". The fullwidth ampersand (U+FF06) passes through
+# and Gemini reads it identically, so we swap it into every outgoing string.
+_AMPERSAND = "＆"  # ＆
+
+
+def _sanitize(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace("&", _AMPERSAND)
+    if isinstance(value, list):
+        return [_sanitize(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _sanitize(item) for key, item in value.items()}
+    return value
+
+
+class KieChatOpenAI(ChatOpenAI):
+    """ChatOpenAI that works around kie.ai proxy quirks.
+
+    1. Requests containing a literal '&' anywhere are rejected → replace with
+       the fullwidth '＆' (Gemini reads it identically).
+    2. Assistant messages with content=null (standard for pure tool-calls in
+       the OpenAI format) are rejected → send "" instead.
+    Both rejections surface as 400 {"msg": "The server is currently being
+    maintained"} with choices=null.
+    """
+
+    def _get_request_payload(self, input_, *, stop=None, **kwargs) -> dict:
+        payload = _sanitize(super()._get_request_payload(input_, stop=stop, **kwargs))
+        for message in payload.get("messages", []):
+            if isinstance(message, dict) and message.get("content") is None:
+                message["content"] = ""
+        return payload
 
 # kie.ai embeds the model name in the URL path:
 #   https://api.kie.ai/{model_name}/v1/chat/completions
@@ -34,7 +71,7 @@ def get_kie_llm(model_name: str, temperature: float, **kwargs):
 
     base_url = kwargs.get("base_url") or f"{KIE_BASE}/{model_name}/v1"
 
-    return ChatOpenAI(
+    return KieChatOpenAI(
         model=model_name,
         temperature=temperature,
         api_key=api_key,

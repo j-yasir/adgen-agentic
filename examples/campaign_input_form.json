@@ -1,9 +1,12 @@
 {
-  "business_id": "YOUR_BUSINESS_ID_HERE",
+  "business_id": "29c43fad-cbd0-49ed-bb23-6871eaf7651c",
   "campaign_name": "Eid 2026 — Gifting Conversion Push",
   "objective": "conversion",
   "platforms": ["instagram", "tiktok"],
+  "asset_types": ["static_image", "video_ad", "email"],
   "funnel_stage": "mofu",
   "num_variants": 4,
-  "special_brief": "Eid ul-Adha is in 3 weeks. Lead with the gifting angle — a jar of Karakoram Kitchen is a story, not just a gift. Highlight the Hunza apricot and sea buckthorn flavours as the hero SKUs. Audience is already aware of the brand; push them to buy or gift now before the batch sells out."
+  "hero_products": ["Hunza Apricot Jam", "Sea Buckthorn Preserve"],
+  "tone_override": "urgent",
+  "special_brief": "Eid ul-Adha is in 3 weeks. Lead with the gifting angle — a jar of Karakoram Kitchen is a story, not just a gift. Audience is already aware of the brand; push them to buy or gift now before the batch sells out."
 }

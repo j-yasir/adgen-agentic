@@ -5,15 +5,19 @@ from typing import TypedDict
 
 class CampaignState(TypedDict):
     # ── Fixed at launch ────────────────────────────────────────────────────────
-    campaign_id:   str
-    business_id:   str
-    user_id:       str
-    bko:           dict          # full BKO loaded from businesses table
-    objective:     str           # awareness | traffic | conversion | lead_gen | engagement
-    platforms:     list[str]     # instagram | facebook | tiktok | youtube | google | linkedin
-    funnel_stage:  str           # tofu | mofu | bofu | balanced
-    num_variants:  int
-    special_brief: str | None
+    campaign_id:    str
+    business_id:    str
+    user_id:        str
+    bko:            dict          # full BKO loaded from businesses table
+    campaign_name:  str | None    # user-provided label or auto-generated
+    objective:      str           # awareness | traffic | conversion | lead_gen | engagement
+    platforms:      list[str]     # instagram | facebook | tiktok | youtube | google | linkedin
+    asset_types:    list[str]     # static_image | video_ad | email
+    funnel_stage:   str           # tofu | mofu | bofu | balanced
+    num_variants:   int
+    hero_products:  list[str]     # specific SKUs to highlight
+    tone_override:  str | None    # override BKO tone for this campaign
+    special_brief:  str | None
 
     # ── Written by Researcher ──────────────────────────────────────────────────
     research_report: dict | None

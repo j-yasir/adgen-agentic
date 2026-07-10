@@ -1,7 +1,10 @@
 # AdGen-Agentic — Database Design
 
-> PostgreSQL 16 + pgvector extension  
+> PostgreSQL 16 + pgvector extension
 > Single database, single schema. All persistence lives here — state, events, vectors, auth, assets.
+>
+> **This document describes the schema as actually migrated and running**, cross-checked against the live
+> database, not a design plan.
 
 ---
 
@@ -9,181 +12,101 @@
 
 1. [Design Decisions](#1-design-decisions)
 2. [Entity Overview](#2-entity-overview)
-3. [ERD Diagram](#3-erd-diagram)
+3. [Schema Relationships](#3-schema-relationships)
 4. [Table Specifications](#4-table-specifications)
-5. [Enums](#5-enums)
+5. [Constraints (CHECK-based Enums)](#5-constraints-check-based-enums)
 6. [Indexes](#6-indexes)
-7. [Full DDL](#7-full-ddl)
+7. [Current Schema DDL](#7-current-schema-ddl)
 8. [LangGraph Tables](#8-langgraph-tables)
-9. [Migration Strategy](#9-migration-strategy)
+9. [Migration History](#9-migration-history)
 
 ---
 
 ## 1. Design Decisions
 
-### Why these choices were made
+**Single PostgreSQL instance for everything**
+No Redis, no Qdrant. PostgreSQL handles relational data, JSONB documents, vector storage (`pgvector`),
+real-time pub/sub (`LISTEN`/`NOTIFY`), and LangGraph checkpointing — all in one service, one connection
+target, one backup strategy.
 
-**Single PostgreSQL instance for everything**  
-No Redis, no Qdrant. PostgreSQL handles relational data, JSONB documents, vector embeddings (pgvector), real-time pub/sub (LISTEN/NOTIFY), and LangGraph checkpointing — all in one service. Fewer moving parts, one connection pool, one backup strategy.
+**UUIDs as primary keys everywhere**
+`gen_random_uuid()` (built into PostgreSQL 13+, no extension needed) prevents enumeration attacks on API
+endpoints.
 
-**UUIDs as primary keys everywhere**  
-UUIDs prevent enumeration attacks on API endpoints (`/campaigns/1`, `/campaigns/2` reveals count). `gen_random_uuid()` is built into PostgreSQL 13+, no extension needed.
+**JSONB for flexible structured data**
+The BKO (`businesses.bko`) and `campaigns.strategy_doc` evolve as the agents evolve. JSONB lets their
+internal shape change without a migration. Stable, queryable fields (`status`, `platform`, `objective`) stay
+as typed columns with `CHECK` constraints.
 
-**JSONB for flexible structured data**  
-The BKO, strategy_doc, and event payloads evolve constantly during development. JSONB lets us change their internal shape without a migration. Stable, queryable fields (like `status`, `platform`, `score`) stay as typed columns.
+**`TEXT` + `CHECK` instead of native `ENUM`**
+Adding a value to a native `ENUM` type requires special migration handling; adding to a `CHECK` constraint is
+a plain `ALTER TABLE ... DROP CONSTRAINT / ADD CONSTRAINT`. Every status/type/enum-like column in this schema
+uses this pattern — see §5.
 
-**pgvector for past-campaign similarity**  
-The Strategist agent retrieves past campaigns semantically similar to the current campaign goal. `vector(768)` matches the output dimension of Google's `text-embedding-004` model. IVFFlat index gives fast approximate nearest-neighbour search.
+**`updated_at` is set explicitly inside stored procedures, not by a DB trigger**
+There is no `set_updated_at()` trigger function anywhere in this schema. Every stored procedure that mutates
+a row sets `updated_at = NOW()` itself as part of its `UPDATE` statement (e.g. `sp_update_campaign_status`,
+`sp_update_business_bko`). This follows directly from the project's stored-procedure-only DB access rule —
+see [ARCHITECTURE.md §3](./ARCHITECTURE.md#3-system-layers).
 
-**Append-only campaign_events table**  
-Every action an agent takes and every tool result that comes back is recorded here. This gives a full audit trail, supports debugging and replay, and feeds the WebSocket stream. Rows are never updated or deleted during a campaign run.
+**Append-only `campaign_events` table**
+Every agent action and tool result is recorded here. Full audit trail, debugging, and the source for SSE
+streaming. Rows are never updated or deleted during a run.
 
-**Separate audit_logs from assets**  
-An asset can be scored multiple times (retry loop). Each scoring pass is a separate row in `audit_logs` with an `iteration` counter. This preserves the full scoring history, not just the final score.
+**Separate `audit_logs` from `assets`**
+An asset can be scored multiple times across the Producer↔Auditor retry loop. Each pass is a separate row
+with an `iteration` counter, preserving full scoring history rather than only the final score.
 
-**Soft relationships on user_id in campaigns**  
-Campaigns reference both `business_id` and `user_id`. `business_id` is the structural FK. `user_id` is denormalised for fast "show me all campaigns for this user" queries without a join through businesses.
+**Denormalised `user_id` on `campaigns`**
+Campaigns reference both `business_id` (the structural FK) and `user_id` (denormalised, so "all campaigns
+for this user" doesn't require a join through `businesses`).
+
+**No custom indexes exist yet beyond what a primary key or `UNIQUE` constraint implies**
+This is a real, current gap, not a design choice: every access pattern in §6 that would benefit from an
+index (e.g. `campaigns(status)`, `campaign_events(campaign_id, seq)`, the `pgvector` similarity index) is
+listed as a recommendation, but none of them have actually been created in any migration to date. At current
+data volumes this hasn't mattered; it will need addressing before the event log or campaign list queries are
+under real load.
 
 ---
 
 ## 2. Entity Overview
 
-| Table | What it represents | Rows per user (approx) |
+| Table | What it represents | Status |
 |---|---|---|
-| `users` | A registered user account | 1 |
-| `refresh_tokens` | Active JWT refresh tokens | 1–5 |
-| `businesses` | A user's business profile + BKO | 1–10 |
-| `business_embeddings` | pgvector rows for BKO + past campaign summaries | 1–50 per business |
-| `campaigns` | A single ad campaign run | Many per business |
-| `campaign_events` | Append-only event log per campaign | 50–200 per campaign |
-| `assets` | A generated file (image / video / voice) per platform | 1–6 per campaign |
-| `audit_logs` | Auditor scoring per asset per retry iteration | 1–3 per asset |
-| `human_reviews` | Human-in-the-loop interrupt sessions | 0–2 per campaign |
+| `users` | A registered user account | Live |
+| `refresh_tokens` | Active/revoked JWT refresh tokens | Live |
+| `businesses` | A user's business profile + BKO | Live |
+| `business_embeddings` | `pgvector` rows for BKO + past-campaign semantic search | Table exists; nothing writes to it yet — see [ARCHITECTURE.md §10](./ARCHITECTURE.md#10-memory-system) |
+| `campaigns` | A single ad campaign run, full brief + status | Live |
+| `campaign_events` | Append-only event log per campaign, backs SSE streaming | Live |
+| `assets` | A generated file (image / video / voice / email) per platform | Schema live; not yet populated with real data — Producer is still prospected |
+| `audit_logs` | Per-asset, per-retry-iteration scoring | Schema live; not yet populated — Auditor is still prospected |
+| `human_reviews` | Defined for HITL interrupt sessions | Table exists but is **not used** — HITL runs entirely on LangGraph's native `interrupt()`/checkpoint mechanism instead, see [ARCHITECTURE.md §11](./ARCHITECTURE.md#11-human-in-the-loop) |
 
 ---
 
-## 3. ERD Diagram
+## 3. Schema Relationships
 
-```mermaid
-erDiagram
-
-    users {
-        uuid        id              PK
-        text        email           UK
-        text        name
-        text        password_hash
-        timestamptz created_at
-        timestamptz updated_at
-    }
-
-    refresh_tokens {
-        uuid        id              PK
-        uuid        user_id         FK
-        text        token_hash      UK
-        timestamptz expires_at
-        boolean     revoked
-        timestamptz created_at
-    }
-
-    businesses {
-        uuid        id              PK
-        uuid        user_id         FK
-        text        name
-        text        website
-        text        industry
-        jsonb       bko
-        int         bko_version
-        text        onboarding_path
-        text        onboarding_status
-        timestamptz created_at
-        timestamptz updated_at
-    }
-
-    business_embeddings {
-        uuid        id              PK
-        uuid        business_id     FK
-        uuid        campaign_id     FK "nullable"
-        text        content_type
-        vector      embedding
-        jsonb       metadata
-        timestamptz created_at
-    }
-
-    campaigns {
-        uuid        id              PK
-        uuid        business_id     FK
-        uuid        user_id         FK
-        text        goal
-        text[]      platforms
-        jsonb       asset_formats
-        text        status
-        jsonb       strategy_doc
-        int         retry_count
-        float       audit_score
-        text        error
-        timestamptz created_at
-        timestamptz updated_at
-        timestamptz completed_at
-    }
-
-    campaign_events {
-        uuid        id              PK
-        uuid        campaign_id     FK
-        bigint      seq
-        text        event_type
-        text        agent
-        jsonb       payload
-        timestamptz created_at
-    }
-
-    assets {
-        uuid        id              PK
-        uuid        campaign_id     FK
-        text        platform
-        text        format
-        text        asset_type
-        text        storage_url
-        text        prompt_used
-        text        status
-        timestamptz created_at
-    }
-
-    audit_logs {
-        uuid        id              PK
-        uuid        asset_id        FK
-        uuid        campaign_id     FK
-        int         iteration
-        float       brand_score
-        float       hook_score
-        float       platform_score
-        float       weighted_avg
-        text        critique
-        timestamptz created_at
-    }
-
-    human_reviews {
-        uuid        id              PK
-        uuid        campaign_id     FK
-        text        interrupt_type
-        jsonb       payload
-        boolean     approved
-        text        feedback
-        timestamptz created_at
-        timestamptz resolved_at
-    }
-
-    users           ||--o{ refresh_tokens      : "has"
-    users           ||--o{ businesses           : "owns"
-    businesses      ||--o{ campaigns            : "runs"
-    businesses      ||--o{ business_embeddings  : "has"
-    campaigns       ||--o{ campaign_events      : "logs"
-    campaigns       ||--o{ assets               : "produces"
-    campaigns       ||--o{ audit_logs           : "accumulates"
-    campaigns       ||--o{ human_reviews        : "gates"
-    campaigns       }o--|| users               : "launched by"
-    assets          ||--o{ audit_logs           : "scored in"
-    campaigns       }o--o| business_embeddings  : "referenced by"
 ```
+users ──┬──< refresh_tokens
+        │
+        └──< businesses ──┬──< business_embeddings >──┐
+                           │                            │
+                           └──< campaigns ──┬──< campaign_events        │
+                                            ├──< assets ──< audit_logs  │
+                                            ├──< audit_logs (denorm)    │
+                                            ├──< human_reviews (unused)│
+                                            └────────────────────────>─┘
+                                            (business_embeddings.campaign_id, nullable)
+
+campaigns.user_id  ──> users.id            (denormalised, no join needed for user-level queries)
+campaigns.id       ──  LangGraph thread_id (see §8 — the link to checkpoints/checkpoint_writes/...)
+```
+
+Legend: `──<` one-to-many, `>──` many-to-one. All child-table foreign keys are `ON DELETE CASCADE` except
+`business_embeddings.campaign_id`, which is `ON DELETE SET NULL` (an embedding tied to a deleted campaign
+degrades to a business-level embedding rather than disappearing).
 
 ---
 
@@ -193,335 +116,280 @@ erDiagram
 
 ### `users`
 
-The root entity. Every other table traces back here.
-
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK, default `gen_random_uuid()` | |
-| `email` | `text` | NOT NULL, UNIQUE | Lowercased on insert |
-| `name` | `text` | NOT NULL | Display name |
-| `password_hash` | `text` | NOT NULL | bcrypt hash, never plain text |
+| `email` | `text` | NOT NULL, UNIQUE | |
+| `name` | `text` | NOT NULL | |
+| `password_hash` | `text` | NOT NULL | bcrypt hash |
 | `created_at` | `timestamptz` | DEFAULT `now()` | |
-| `updated_at` | `timestamptz` | DEFAULT `now()` | Updated via trigger |
+| `updated_at` | `timestamptz` | DEFAULT `now()` | Bumped explicitly by stored procedures, no trigger |
 
 ---
 
 ### `refresh_tokens`
 
-Tracks issued refresh tokens so they can be revoked individually (e.g. logout from one device).
-
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `user_id` | `uuid` | FK → `users.id` ON DELETE CASCADE | |
-| `token_hash` | `text` | NOT NULL, UNIQUE | SHA-256 of the raw token. Never store raw. |
+| `token_hash` | `text` | NOT NULL, UNIQUE | SHA-256 of the raw token — the raw value is never stored |
 | `expires_at` | `timestamptz` | NOT NULL | 7 days from issue |
-| `revoked` | `boolean` | DEFAULT `false` | Set to `true` on logout |
+| `revoked` | `boolean` | DEFAULT `false` | Set `true` on logout or rotation |
 | `created_at` | `timestamptz` | DEFAULT `now()` | |
 
 ---
 
 ### `businesses`
 
-One row per business a user onboards. Contains the full Business Knowledge Object (BKO) as JSONB.
-
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `user_id` | `uuid` | FK → `users.id` ON DELETE CASCADE | |
 | `name` | `text` | NOT NULL | |
-| `website` | `text` | | Nullable — not all onboarding paths have a URL |
-| `industry` | `text` | | Top-level industry tag extracted from BKO |
-| `bko` | `jsonb` | NOT NULL | Full Business Knowledge Object. Schema in ARCHITECTURE.md §5 |
-| `bko_version` | `int` | DEFAULT `1` | Incremented on every BKO refresh |
-| `onboarding_path` | `text` | NOT NULL | `url` \| `free_text` \| `form` |
-| `onboarding_status` | `text` | DEFAULT `'pending'` | `pending` \| `complete` |
-| `created_at` | `timestamptz` | DEFAULT `now()` | |
-| `updated_at` | `timestamptz` | DEFAULT `now()` | |
-
-**BKO querying**: Use `jsonb_path_query` or `->` / `->>` operators for targeted reads.  
-Example — get the one-liner: `SELECT bko -> 'identity' ->> 'one_liner' FROM businesses WHERE id = $1`
+| `website` | `text` | nullable | |
+| `industry` | `text` | nullable | Top-level tag, also present inside `bko.identity` |
+| `bko` | `jsonb` | NOT NULL | Full Business Knowledge Object — 10-section shape documented in [ARCHITECTURE.md §5](./ARCHITECTURE.md#5-business-onboarding--bko) |
+| `bko_version` | `int` | NOT NULL | Incremented by `sp_update_business_bko` (`bko_version + 1`) on every BKO update |
+| `onboarding_path` | `text` | NOT NULL, CHECK `IN ('url','free_text','form')` | Only `form` is actually implemented today |
+| `onboarding_status` | `text` | NOT NULL, CHECK `IN ('pending','complete')` | |
+| `created_at` / `updated_at` | `timestamptz` | DEFAULT `now()` | |
 
 ---
 
 ### `business_embeddings`
 
-pgvector rows for semantic similarity search. Two types of content are embedded:
-
-- **`bko`**: The base business embedding created at onboarding. One per business.
-- **`campaign_summary`**: A short summary of each completed campaign (goal + top hook + score). Written back after every successful campaign. Used by the Strategist to find relevant past campaigns.
+Reserved for episodic memory (past-campaign semantic similarity). The table, FK relationships, and vector
+column are all live; nothing in the codebase writes an embedding or queries one yet —
+`tools/retrieve_past_campaigns.py` is a permanent stub that returns *"no past campaign data found"*
+regardless of what's in this table.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `business_id` | `uuid` | FK → `businesses.id` ON DELETE CASCADE | |
-| `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE SET NULL | Null for the base BKO embedding |
-| `content_type` | `text` | NOT NULL | `bko` \| `campaign_summary` |
-| `embedding` | `vector(768)` | NOT NULL | Google `text-embedding-004` output |
-| `metadata` | `jsonb` | | Extra fields: goal, top_hook, score, platform — for filtering before similarity search |
+| `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE SET NULL, nullable | Null for a base BKO embedding |
+| `content_type` | `text` | NOT NULL, CHECK `IN ('bko','campaign_summary')` | |
+| `embedding` | `vector(768)` | NOT NULL | Dimension matches a 768-d embedding model (e.g. Gemini `text-embedding-004`) |
+| `metadata` | `jsonb` | NOT NULL, default `{}` | Intended for filterable fields (goal, top hook, score) alongside the vector |
 | `created_at` | `timestamptz` | DEFAULT `now()` | |
-
-**Query pattern** (find top 3 past campaigns similar to current goal):
-```sql
-SELECT metadata, 1 - (embedding <=> $goal_embedding) AS similarity
-FROM business_embeddings
-WHERE business_id = $business_id
-  AND content_type = 'campaign_summary'
-ORDER BY embedding <=> $goal_embedding
-LIMIT 3;
-```
 
 ---
 
 ### `campaigns`
 
-One row per campaign run. Status transitions: `pending → running → awaiting_review → done | failed`
+One row per campaign run. This table has grown twice since the initial migration — see §9.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| `id` | `uuid` | PK | Also used as LangGraph `thread_id` |
+| `id` | `uuid` | PK | Also the LangGraph checkpointer's `thread_id` — see §8 |
 | `business_id` | `uuid` | FK → `businesses.id` ON DELETE CASCADE | |
-| `user_id` | `uuid` | FK → `users.id` ON DELETE CASCADE | Denormalised for fast user-level queries |
-| `goal` | `text` | NOT NULL | E.g. "Get free trial signups" |
-| `platforms` | `text[]` | NOT NULL | E.g. `{linkedin,meta,tiktok}` |
-| `asset_formats` | `jsonb` | | E.g. `{"linkedin": "1:1", "tiktok": "9:16"}` |
-| `status` | `text` | DEFAULT `'pending'` | `pending \| running \| awaiting_review \| done \| failed` |
-| `strategy_doc` | `jsonb` | | Populated after Strategist agent completes |
-| `retry_count` | `int` | DEFAULT `0` | Number of Producer→Auditor retry cycles |
-| `audit_score` | `float` | | Final weighted Auditor score |
-| `error` | `text` | | Error message if `status = 'failed'` |
-| `created_at` | `timestamptz` | DEFAULT `now()` | |
-| `updated_at` | `timestamptz` | DEFAULT `now()` | |
-| `completed_at` | `timestamptz` | | Set when status becomes `done` or `failed` |
+| `user_id` | `uuid` | FK → `users.id` ON DELETE CASCADE | Denormalised |
+| `goal` | `text` | NOT NULL | Legacy free-text goal field, predates the structured brief fields below |
+| `campaign_name` | `text` | nullable | User-provided label; auto-generated from objective+platforms if omitted |
+| `objective` | `text` | NOT NULL, CHECK `IN ('awareness','traffic','conversion','lead_gen','engagement')`, default `'awareness'` | |
+| `platforms` | `text[]` | NOT NULL | |
+| `asset_types` | `text[]` | nullable | `static_image` \| `video_ad` \| `email` |
+| `funnel_stage` | `text` | NOT NULL, CHECK `IN ('tofu','mofu','bofu','balanced')`, default `'balanced'` | Only `'balanced'` allows per-asset variation — enforced by the Strategist's validation layer, not by this constraint |
+| `num_variants` | `int` | NOT NULL, default `3` | |
+| `hero_products` | `text[]` | nullable | Specific SKUs to prioritize |
+| `tone_override` | `text` | nullable | |
+| `special_brief` | `text` | nullable | |
+| `asset_formats` | `jsonb` | NOT NULL, default `{}` | Legacy — largely superseded by per-asset `format` inside `strategy_doc.asset_plan` |
+| `status` | `text` | NOT NULL, CHECK `IN ('pending','running','awaiting_review','done','failed')`, default `'pending'` | |
+| `strategy_doc` | `jsonb` | nullable | Populated after the Strategist completes |
+| `retry_count` | `int` | NOT NULL, default `0` | Producer↔Auditor retry cycles |
+| `audit_score` | `float` | nullable | Final weighted Auditor score |
+| `error` | `text` | nullable | Set when `status = 'failed'` |
+| `resumable` | `boolean` | NOT NULL, default `false` | `true` only when the failure was a node error after automatic retries were exhausted (see [ARCHITECTURE.md §8](./ARCHITECTURE.md#8-durable-execution--retry--resume)) |
+| `failed_node` | `text` | nullable | Which orchestrator node failed, e.g. `run_strategist` |
+| `created_at` / `updated_at` | `timestamptz` | DEFAULT `now()` | |
+| `completed_at` | `timestamptz` | nullable | Set when `status` becomes `done` or `failed` |
 
-> **Note**: `campaign.id` is passed directly as LangGraph's `thread_id` in the checkpointer config. This is the link between our DB and LangGraph's internal checkpoint tables.
+> `resumable`/`failed_node` are cleared automatically whenever a stored-procedure call transitions `status`
+> to `'running'` — this is a `CASE` expression inside `sp_update_campaign_status`, not application code, so
+> it can't be forgotten by a future caller.
 
 ---
 
 ### `campaign_events`
 
-Append-only event log. Every agent action and tool result is written here. Never update or delete rows during a run. Used for:
-- Real-time streaming via `pg_notify`
-- Audit trail and debugging
-- Replay if needed
+Append-only. Backs both the SSE stream and the audit trail.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE CASCADE | |
-| `seq` | `bigint` | NOT NULL, generated always as identity | Monotonically increasing per campaign — guarantees ordering |
-| `event_type` | `text` | NOT NULL | See event type enum below |
-| `agent` | `text` | | `researcher \| strategist \| producer \| auditor \| system` |
-| `payload` | `jsonb` | NOT NULL | Event-specific data |
+| `seq` | `bigint` | NOT NULL, `GENERATED ALWAYS AS IDENTITY` | Monotonically increasing per row — guarantees ordering and is the reconnect cursor (`?after_seq=`) |
+| `event_type` | `text` | NOT NULL, CHECK — see §5 | |
+| `agent` | `text` | nullable, CHECK — see §5 | |
+| `payload` | `jsonb` | NOT NULL, default `{}` | |
 | `created_at` | `timestamptz` | DEFAULT `now()` | |
 
-**Event types**: `agent_start`, `tool_call`, `tool_result`, `agent_done`, `human_review_required`, `campaign_done`, `campaign_failed`
-
-**Streaming pattern**: After inserting a row, the campaign runner calls:
-```sql
-SELECT pg_notify('campaign_' || campaign_id::text, row_to_json(new)::text);
-```
+**Streaming pattern**: `sp_insert_campaign_event` does the `INSERT` and a `pg_notify()` call in one stored
+procedure. The `NOTIFY` payload is deliberately a slim envelope (`{id, seq, event_type, agent}`), **not** the
+full row — `pg_notify` has an 8000-byte hard limit, and a full research report or strategy doc exceeds it.
+Listeners re-read the full row from this table by `seq` on notification. Full mechanism:
+[ARCHITECTURE.md §12](./ARCHITECTURE.md#12-streaming--real-time-events).
 
 ---
 
 ### `assets`
 
-One row per generated file. A campaign with 3 platforms produces 3+ asset rows.
-
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE CASCADE | |
-| `platform` | `text` | NOT NULL | `linkedin \| meta \| tiktok \| instagram \| ...` |
-| `format` | `text` | NOT NULL | `1:1 \| 9:16 \| 16:9 \| 4:5` |
-| `asset_type` | `text` | NOT NULL | `image \| video \| voice` |
-| `storage_url` | `text` | NOT NULL | Cloudflare R2 public URL |
-| `prompt_used` | `text` | | The generation prompt sent to Imagen 3 / Veo 3 |
-| `status` | `text` | DEFAULT `'pending'` | `pending \| generating \| stored \| failed` |
+| `platform` | `text` | NOT NULL | No CHECK constraint — free text |
+| `format` | `text` | NOT NULL | No CHECK constraint — e.g. `9:16`, `4:5`, `1:1`, `email` |
+| `asset_type` | `text` | NOT NULL, CHECK `IN ('image','video','voice','email')` | Extended to include `email` in the second migration |
+| `storage_url` | `text` | NOT NULL | |
+| `prompt_used` | `text` | nullable | The generation prompt sent to the media provider |
+| `status` | `text` | NOT NULL, CHECK `IN ('pending','generating','stored','failed')`, default `'pending'` | |
 | `created_at` | `timestamptz` | DEFAULT `now()` | |
 
 ---
 
 ### `audit_logs`
 
-One row per asset per Auditor iteration. Preserves full scoring history across retry cycles.
-
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `asset_id` | `uuid` | FK → `assets.id` ON DELETE CASCADE | |
-| `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE CASCADE | Denormalised for fast campaign-level queries |
-| `iteration` | `int` | NOT NULL | `0` = first pass, `1` = after first retry, etc. |
-| `brand_score` | `float` | | 1–10. Visual / copy brand alignment |
-| `hook_score` | `float` | | 1–10. First-frame / first-line attention capture |
-| `platform_score` | `float` | | 1–10. Platform format and aesthetic fit |
-| `weighted_avg` | `float` | | `0.4 × brand + 0.35 × hook + 0.25 × platform` |
-| `critique` | `text` | | Actionable per-asset critique from Auditor agent |
+| `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE CASCADE | Denormalised |
+| `iteration` | `int` | NOT NULL, default `0` | `0` = first pass, `1` = after first retry, ... |
+| `brand_score` / `hook_score` / `platform_score` | `float` | nullable | 1–10 each |
+| `weighted_avg` | `float` | nullable | `0.40×brand + 0.35×hook + 0.25×platform` |
+| `critique` | `text` | nullable | |
 | `created_at` | `timestamptz` | DEFAULT `now()` | |
 
 ---
 
 ### `human_reviews`
 
-One row per interrupt. A campaign can have up to two (BKO gap-filling + asset approval). Stores what was shown to the user and what they decided.
+Schema-complete, **currently unused by any application code**. HITL pause/resume is implemented entirely
+through LangGraph's `interrupt()` / `Command(resume=...)` plus `campaign_events`
+([ARCHITECTURE.md §11](./ARCHITECTURE.md#11-human-in-the-loop)) — nothing inserts into or reads from this
+table today.
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
 | `id` | `uuid` | PK | |
 | `campaign_id` | `uuid` | FK → `campaigns.id` ON DELETE CASCADE | |
-| `interrupt_type` | `text` | NOT NULL | `bko_gap \| asset_approval \| user_pause` |
-| `payload` | `jsonb` | | What was sent to the frontend (assets, scores, gap fields) |
-| `approved` | `boolean` | | `true` = approved / gap filled. `false` = rejected. Null = not yet resolved. |
-| `feedback` | `text` | | User's rejection notes or gap-fill answers |
-| `created_at` | `timestamptz` | DEFAULT `now()` | |
-| `resolved_at` | `timestamptz` | | Set when `POST /campaigns/{id}/resume` is called |
+| `interrupt_type` | `text` | NOT NULL, CHECK `IN ('bko_gap','asset_approval','user_pause')` | |
+| `payload` | `jsonb` | NOT NULL, default `{}` | |
+| `approved` | `boolean` | nullable | |
+| `feedback` | `text` | nullable | |
+| `created_at` / `resolved_at` | `timestamptz` | | |
 
 ---
 
-## 5. Enums
+## 5. Constraints (CHECK-based Enums)
 
-These are implemented as `TEXT` columns with `CHECK` constraints rather than PostgreSQL `ENUM` types. Reason: adding a new value to a `ENUM` type requires a migration + lock; adding to a `CHECK` constraint is a simpler migration.
+Every one of these is a live `CHECK` constraint, read directly from the database:
 
 ```sql
--- onboarding_path
+-- businesses.onboarding_path
 CHECK (onboarding_path IN ('url', 'free_text', 'form'))
 
--- onboarding_status
+-- businesses.onboarding_status
 CHECK (onboarding_status IN ('pending', 'complete'))
 
--- campaign status
+-- campaigns.status
 CHECK (status IN ('pending', 'running', 'awaiting_review', 'done', 'failed'))
 
--- asset status
+-- campaigns.objective
+CHECK (objective IN ('awareness', 'traffic', 'conversion', 'lead_gen', 'engagement'))
+
+-- campaigns.funnel_stage
+CHECK (funnel_stage IN ('tofu', 'mofu', 'bofu', 'balanced'))
+
+-- assets.status
 CHECK (status IN ('pending', 'generating', 'stored', 'failed'))
 
--- asset_type
-CHECK (asset_type IN ('image', 'video', 'voice'))
+-- assets.asset_type
+CHECK (asset_type IN ('image', 'video', 'voice', 'email'))
 
--- interrupt_type
+-- human_reviews.interrupt_type
 CHECK (interrupt_type IN ('bko_gap', 'asset_approval', 'user_pause'))
 
--- content_type (business_embeddings)
+-- business_embeddings.content_type
 CHECK (content_type IN ('bko', 'campaign_summary'))
 
--- event_type (campaign_events)
+-- campaign_events.event_type  (12 values — includes both current and legacy names)
 CHECK (event_type IN (
-    'agent_start', 'tool_call', 'tool_result', 'agent_done',
+    'agent_start', 'agent_started', 'agent_done', 'agent_completed', 'agent_error',
+    'tool_call', 'tool_result', 'status_changed', 'hitl_required',
     'human_review_required', 'campaign_done', 'campaign_failed'
 ))
 
--- agent (campaign_events)
-CHECK (agent IN ('researcher', 'strategist', 'producer', 'auditor', 'system'))
+-- campaign_events.agent
+CHECK (agent IN ('researcher', 'strategist', 'producer', 'auditor', 'orchestrator', 'system'))
 ```
+
+> The `event_type` and `agent` constraints are wider than the original migration defined — they were altered
+> directly against the live database as the event vocabulary grew (`agent_started`/`agent_completed`
+> replaced `agent_start`/`agent_done` in practice; `status_changed`, `hitl_required`, and `agent_error` were
+> added; `orchestrator` was added to `agent`). **This widening has not yet been captured in an Alembic
+> migration** — anyone re-provisioning a fresh database from the 3 migrations in §9 alone will get the
+> narrower, original constraint values and should widen them manually (or a migration should be written to
+> match; not done in this pass).
 
 ---
 
 ## 6. Indexes
 
-### Access patterns driving index decisions
+### Recommended indexes for known access patterns (not yet created — see §1)
 
-| Query | Table | Index |
+| Query | Table | Suggested index |
 |---|---|---|
-| Login by email | `users` | UNIQUE on `email` |
-| Validate refresh token | `refresh_tokens` | UNIQUE on `token_hash` |
-| List businesses for a user | `businesses` | `(user_id)` |
 | List campaigns for a user | `campaigns` | `(user_id)` |
 | List campaigns for a business | `campaigns` | `(business_id)` |
-| Find running campaigns (health check / retry) | `campaigns` | `(status)` |
-| Load event log for a campaign in order | `campaign_events` | `(campaign_id, seq)` |
+| Find campaigns by status (retry sweep, dashboards) | `campaigns` | `(status)` |
+| Load event log for a campaign in order / reconnect catch-up | `campaign_events` | `(campaign_id, seq)` |
 | List assets for a campaign | `assets` | `(campaign_id)` |
 | Load audit history for an asset | `audit_logs` | `(asset_id)` |
-| Load all audit rows for a campaign | `audit_logs` | `(campaign_id)` |
-| Pending human review lookup | `human_reviews` | `(campaign_id)` |
-| Semantic similarity search on embeddings | `business_embeddings` | IVFFlat on `embedding` |
-| Filter embeddings by business + type | `business_embeddings` | `(business_id, content_type)` |
+| Semantic similarity search | `business_embeddings` | IVFFlat or HNSW on `embedding` |
+| Filter embeddings by business + type before similarity search | `business_embeddings` | `(business_id, content_type)` |
 
-```sql
--- users
-CREATE UNIQUE INDEX idx_users_email ON users(email);
+### What actually exists today
 
--- refresh_tokens
-CREATE INDEX idx_refresh_tokens_user   ON refresh_tokens(user_id);
-CREATE UNIQUE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
-
--- businesses
-CREATE INDEX idx_businesses_user ON businesses(user_id);
-
--- business_embeddings
-CREATE INDEX idx_embeddings_business_type ON business_embeddings(business_id, content_type);
--- IVFFlat: tune lists = sqrt(row count). Start with 10 for dev.
-CREATE INDEX idx_embeddings_vector ON business_embeddings
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 10);
-
--- campaigns
-CREATE INDEX idx_campaigns_business ON campaigns(business_id);
-CREATE INDEX idx_campaigns_user     ON campaigns(user_id);
-CREATE INDEX idx_campaigns_status   ON campaigns(status);
-
--- campaign_events
-CREATE INDEX idx_events_campaign_seq ON campaign_events(campaign_id, seq);
-
--- assets
-CREATE INDEX idx_assets_campaign ON assets(campaign_id);
-
--- audit_logs
-CREATE INDEX idx_audit_asset    ON audit_logs(asset_id);
-CREATE INDEX idx_audit_campaign ON audit_logs(campaign_id);
-
--- human_reviews
-CREATE INDEX idx_reviews_campaign ON human_reviews(campaign_id);
-```
+Only the indexes PostgreSQL creates implicitly for primary keys and `UNIQUE` constraints:
+`users_pkey`, `users_email_key`, `refresh_tokens_pkey`, `refresh_tokens_token_hash_key`,
+`businesses_pkey`, `campaigns_pkey`, `campaign_events_pkey`, `assets_pkey`, `audit_logs_pkey`,
+`human_reviews_pkey`, `business_embeddings_pkey`. No composite, partial, or vector index has been created in
+any migration to date.
 
 ---
 
-## 7. Full DDL
+## 7. Current Schema DDL
 
-Copy this exactly into the first Alembic migration.
+The full, current-state DDL is spread across the 3 real migrations listed in §9 rather than a single file —
+this section shows the tables as they exist today (i.e. migration 1 + migration 2's additions + migration
+3's additions, combined), so it's a correct reference even though no single migration file looks like this.
 
 ```sql
--- ── Extensions ────────────────────────────────────────────────────────────────
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";   -- gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS "vector";     -- pgvector
 
--- ── Updated-at trigger function ───────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = now();
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- ── users ─────────────────────────────────────────────────────────────────────
 CREATE TABLE users (
     id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         TEXT        NOT NULL,
+    email         TEXT        NOT NULL UNIQUE,
     name          TEXT        NOT NULL,
     password_hash TEXT        NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_users_email UNIQUE (email)
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TRIGGER trg_users_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- ── refresh_tokens ────────────────────────────────────────────────────────────
 CREATE TABLE refresh_tokens (
     id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash TEXT        NOT NULL,
+    token_hash TEXT        NOT NULL UNIQUE,
     expires_at TIMESTAMPTZ NOT NULL,
     revoked    BOOLEAN     NOT NULL DEFAULT false,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT uq_refresh_tokens_hash UNIQUE (token_hash)
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
-
--- ── businesses ────────────────────────────────────────────────────────────────
 CREATE TABLE businesses (
     id                UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id           UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -531,112 +399,84 @@ CREATE TABLE businesses (
     bko               JSONB       NOT NULL DEFAULT '{}',
     bko_version       INT         NOT NULL DEFAULT 1,
     onboarding_path   TEXT        NOT NULL
-                          CONSTRAINT chk_businesses_onboarding_path
                           CHECK (onboarding_path IN ('url', 'free_text', 'form')),
     onboarding_status TEXT        NOT NULL DEFAULT 'pending'
-                          CONSTRAINT chk_businesses_onboarding_status
                           CHECK (onboarding_status IN ('pending', 'complete')),
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_businesses_user ON businesses(user_id);
+CREATE TABLE campaigns (
+    id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    business_id     UUID        NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+    user_id         UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    goal            TEXT        NOT NULL,
+    campaign_name   TEXT,
+    objective       TEXT        NOT NULL DEFAULT 'awareness'
+                        CHECK (objective IN ('awareness', 'traffic', 'conversion', 'lead_gen', 'engagement')),
+    platforms       TEXT[]      NOT NULL,
+    asset_types     TEXT[],
+    funnel_stage    TEXT        NOT NULL DEFAULT 'balanced'
+                        CHECK (funnel_stage IN ('tofu', 'mofu', 'bofu', 'balanced')),
+    num_variants    INT         NOT NULL DEFAULT 3,
+    hero_products   TEXT[],
+    tone_override   TEXT,
+    special_brief   TEXT,
+    asset_formats   JSONB       NOT NULL DEFAULT '{}',
+    status          TEXT        NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'running', 'awaiting_review', 'done', 'failed')),
+    strategy_doc    JSONB,
+    retry_count     INT         NOT NULL DEFAULT 0,
+    audit_score     FLOAT,
+    error           TEXT,
+    resumable       BOOLEAN     NOT NULL DEFAULT false,
+    failed_node     TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at    TIMESTAMPTZ
+);
 
-CREATE TRIGGER trg_businesses_updated_at
-    BEFORE UPDATE ON businesses
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- ── business_embeddings ───────────────────────────────────────────────────────
 CREATE TABLE business_embeddings (
     id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     business_id  UUID        NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    campaign_id  UUID,                          -- FK added after campaigns table exists
+    campaign_id  UUID        REFERENCES campaigns(id) ON DELETE SET NULL,
     content_type TEXT        NOT NULL
-                     CONSTRAINT chk_embeddings_content_type
                      CHECK (content_type IN ('bko', 'campaign_summary')),
     embedding    VECTOR(768) NOT NULL,
     metadata     JSONB       NOT NULL DEFAULT '{}',
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_embeddings_business_type ON business_embeddings(business_id, content_type);
-CREATE INDEX idx_embeddings_vector ON business_embeddings
-    USING ivfflat (embedding vector_cosine_ops)
-    WITH (lists = 10);
-
--- ── campaigns ─────────────────────────────────────────────────────────────────
-CREATE TABLE campaigns (
-    id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    business_id   UUID        NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-    user_id       UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    goal          TEXT        NOT NULL,
-    platforms     TEXT[]      NOT NULL,
-    asset_formats JSONB       NOT NULL DEFAULT '{}',
-    status        TEXT        NOT NULL DEFAULT 'pending'
-                      CONSTRAINT chk_campaigns_status
-                      CHECK (status IN ('pending', 'running', 'awaiting_review', 'done', 'failed')),
-    strategy_doc  JSONB,
-    retry_count   INT         NOT NULL DEFAULT 0,
-    audit_score   FLOAT,
-    error         TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at  TIMESTAMPTZ
-);
-
-CREATE INDEX idx_campaigns_business ON campaigns(business_id);
-CREATE INDEX idx_campaigns_user     ON campaigns(user_id);
-CREATE INDEX idx_campaigns_status   ON campaigns(status);
-
-CREATE TRIGGER trg_campaigns_updated_at
-    BEFORE UPDATE ON campaigns
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
-
--- Add deferred FK from business_embeddings to campaigns
-ALTER TABLE business_embeddings
-    ADD CONSTRAINT fk_embeddings_campaign
-    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE SET NULL;
-
--- ── campaign_events ───────────────────────────────────────────────────────────
 CREATE TABLE campaign_events (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
     seq         BIGINT      NOT NULL GENERATED ALWAYS AS IDENTITY,
     event_type  TEXT        NOT NULL
-                    CONSTRAINT chk_events_event_type
                     CHECK (event_type IN (
-                        'agent_start', 'tool_call', 'tool_result', 'agent_done',
+                        'agent_start', 'agent_started', 'agent_done', 'agent_completed', 'agent_error',
+                        'tool_call', 'tool_result', 'status_changed', 'hitl_required',
                         'human_review_required', 'campaign_done', 'campaign_failed'
                     )),
     agent       TEXT
-                    CONSTRAINT chk_events_agent
-                    CHECK (agent IN ('researcher', 'strategist', 'producer', 'auditor', 'system')),
+                    CHECK (agent IN ('researcher', 'strategist', 'producer', 'auditor', 'orchestrator', 'system')),
     payload     JSONB       NOT NULL DEFAULT '{}',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_events_campaign_seq ON campaign_events(campaign_id, seq);
-
--- ── assets ────────────────────────────────────────────────────────────────────
 CREATE TABLE assets (
     id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
     platform    TEXT        NOT NULL,
     format      TEXT        NOT NULL,
     asset_type  TEXT        NOT NULL
-                    CONSTRAINT chk_assets_type
-                    CHECK (asset_type IN ('image', 'video', 'voice')),
+                    CHECK (asset_type IN ('image', 'video', 'voice', 'email')),
     storage_url TEXT        NOT NULL,
     prompt_used TEXT,
     status      TEXT        NOT NULL DEFAULT 'pending'
-                    CONSTRAINT chk_assets_status
                     CHECK (status IN ('pending', 'generating', 'stored', 'failed')),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_assets_campaign ON assets(campaign_id);
-
--- ── audit_logs ────────────────────────────────────────────────────────────────
 CREATE TABLE audit_logs (
     id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id       UUID        NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
@@ -650,15 +490,10 @@ CREATE TABLE audit_logs (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_audit_asset    ON audit_logs(asset_id);
-CREATE INDEX idx_audit_campaign ON audit_logs(campaign_id);
-
--- ── human_reviews ─────────────────────────────────────────────────────────────
 CREATE TABLE human_reviews (
     id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
     campaign_id    UUID        NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
     interrupt_type TEXT        NOT NULL
-                       CONSTRAINT chk_reviews_interrupt_type
                        CHECK (interrupt_type IN ('bko_gap', 'asset_approval', 'user_pause')),
     payload        JSONB       NOT NULL DEFAULT '{}',
     approved       BOOLEAN,
@@ -666,81 +501,90 @@ CREATE TABLE human_reviews (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     resolved_at    TIMESTAMPTZ
 );
-
-CREATE INDEX idx_reviews_campaign ON human_reviews(campaign_id);
 ```
 
 ---
 
 ## 8. LangGraph Tables
 
-LangGraph's `AsyncPostgresSaver` auto-creates three tables when the checkpointer is first initialised. **Do not create these manually.** They are managed entirely by LangGraph.
+`AsyncPostgresSaver` auto-creates **four** tables the first time the checkpointer is initialised (one more
+than a bare-bones setup might expect). **Do not create or modify these manually** — they're owned entirely
+by LangGraph's internal schema versioning.
 
 | Table | Purpose |
 |---|---|
-| `checkpoints` | One row per completed graph node. Stores serialised LangGraph state. Keyed by `thread_id` (= our `campaign.id`) + `checkpoint_id`. |
-| `checkpoint_blobs` | Large blob storage for checkpoint state values that exceed inline size. |
-| `checkpoint_writes` | Pending writes buffered before a checkpoint is committed. |
+| `checkpoints` | One row per completed graph superstep. Serialised `CampaignState`. Keyed by `thread_id` (= `campaigns.id`) + `checkpoint_id`. Indexed on `thread_id`. |
+| `checkpoint_blobs` | Large state values that exceed inline storage size. |
+| `checkpoint_writes` | Pending writes buffered before a checkpoint commits. Indexed on `thread_id`. |
+| `checkpoint_migrations` | LangGraph's own internal schema-version tracker for these tables — unrelated to this project's Alembic migrations. |
 
-**The link between our schema and LangGraph:**  
-`campaigns.id` is passed as `thread_id` in every `graph.ainvoke()` call:
+**The link between our schema and LangGraph:** `campaigns.id` is passed as `thread_id` in every
+`graph.ainvoke()` call:
 
 ```python
-await graph.ainvoke(
-    state,
-    config={"configurable": {"thread_id": str(campaign.id)}}
-)
+await graph.ainvoke(state, config={"configurable": {"thread_id": str(campaign_id)}})
 ```
 
-This means you can always look up the full LangGraph checkpoint state for any campaign using its UUID.
+**Two separate DB drivers are in play, deliberately:** the application's own tables (everything in §4) are
+read and written exclusively through **synchronous** SQLAlchemy + `psycopg2`, calling stored procedures — no
+ORM writes anywhere. The LangGraph checkpointer tables are managed by `AsyncPostgresSaver`, which uses
+**asynchronous** `psycopg` (v3) against the same database. These are two different connection paths to the
+same Postgres instance, not two different databases.
 
-**On crash recovery**: LangGraph reads its own `checkpoints` table to find the last completed node, then resumes from there using the serialised state. Our `campaign_events` table is independent and records what actually happened — it's the human-readable audit trail.
+**Crash recovery**: LangGraph reads its own `checkpoints` table to find the last completed node for a given
+`thread_id`, then resumes from there with the serialised state — this is the mechanism
+[ARCHITECTURE.md §8](./ARCHITECTURE.md#8-durable-execution--retry--resume) builds durable retry on top of.
+`campaign_events` is independent of this and remains the human-readable audit trail regardless of what
+LangGraph does internally.
 
 ---
 
-## 9. Migration Strategy
+## 9. Migration History
 
-### Tooling
-Alembic with async SQLAlchemy. One migration file per logical change.
+Three real Alembic revisions exist today — not the hypothetical nine-file, one-table-per-migration plan a
+prior draft of this document assumed.
 
-### File: `alembic.ini` (key setting)
-```ini
-sqlalchemy.url = postgresql+asyncpg://%(DB_USER)s:%(DB_PASSWORD)s@%(DB_HOST)s/%(DB_NAME)s
-```
+| Revision | Adds |
+|---|---|
+| `0fcc9913fd20` (initial_schema) | All 9 application tables in one migration: `users`, `refresh_tokens`, `businesses`, `campaigns`, `assets`, `business_embeddings`, `campaign_events`, `human_reviews`, `audit_logs`. Enables the `pgcrypto` and `vector` extensions. |
+| `4cb5eeb9d42f` (add_campaign_brief_fields) | Adds `campaign_name`, `objective` (+ CHECK), `funnel_stage` (+ CHECK), `num_variants`, `special_brief` to `campaigns`. Widens `assets.asset_type`'s CHECK to add `'email'`. (`asset_types`, `hero_products`, `tone_override` were added alongside these in application code but are also part of this revision's column set.) |
+| `7a3f9c2e5b1d` (add_campaign_retry_fields) | Adds `resumable BOOLEAN DEFAULT false` and `failed_node TEXT` to `campaigns` — the durable-execution retry mechanism in [ARCHITECTURE.md §8](./ARCHITECTURE.md#8-durable-execution--retry--resume). |
 
-### Migration order
-```
-0001_create_extensions_and_users.py
-0002_create_refresh_tokens.py
-0003_create_businesses.py
-0004_create_business_embeddings.py
-0005_create_campaigns_and_fk_patch.py
-0006_create_campaign_events.py
-0007_create_assets.py
-0008_create_audit_logs.py
-0009_create_human_reviews.py
-```
-
-`business_embeddings.campaign_id` FK is added in `0005` after `campaigns` exists — this is why it uses `ALTER TABLE` rather than being inline.
+> As noted in §5, the `campaign_events.event_type` and `.agent` CHECK constraints have been widened directly
+> against the live database beyond what any of these three migrations define. This drift is real and should
+> be captured in a fourth migration at some point — not done in this pass.
 
 ### Commands
 
-```bash
-# create a new migration (from inside adgen/)
-alembic revision --autogenerate -m "description"
+The application's own DB access is synchronous (SQLAlchemy + `psycopg2`), and Alembic runs against that same
+synchronous connection — there is no `asyncpg` anywhere in this project's migration tooling.
 
+```bash
 # apply all pending migrations
 alembic upgrade head
+
+# create a new migration
+alembic revision -m "description"          # hand-written; --autogenerate has not been the pattern used here
 
 # roll back one migration
 alembic downgrade -1
 
 # check current revision
 alembic current
+
+# reload stored procedures without restarting the app (separate from Alembic)
+curl -X POST http://localhost:8000/api/v1/admin/load-procedures
 ```
 
 ### Rules
-- **Never edit a migration that has been applied to any environment.** Create a new one.
-- **Always run `alembic upgrade head` in docker-compose startup** so the dev DB is always in sync.
-- When changing the BKO schema shape, update the `bko` JSONB default and document the new shape in `schemas/bko.py` — no migration needed for JSONB internals.
-- When changing `vector(768)` dimension (e.g. switching embedding model), you must drop and recreate the `embedding` column and re-index. Plan for a re-embedding job.
+
+- Never edit a migration that has already been applied anywhere — create a new one.
+- Stored procedures are **not** managed by Alembic — they live as plain `.sql` files under `sql/` and are
+  (re)loaded via `sql.load_stored_procedures()`, called both at app startup and by
+  `POST /admin/load-procedures`. Changing a stored procedure's SQL does not require a migration; changing a
+  table's shape does.
+- When changing the BKO's internal JSONB shape, no migration is needed — update `schemas/bko.py` and
+  `services/bko_service.py` only.
+- Changing `business_embeddings.embedding`'s dimension (e.g. switching embedding models) requires dropping
+  and recreating that column and re-embedding everything — there is no data in it yet, so this is currently
+  a zero-cost change if needed.

@@ -1,11 +1,14 @@
 DROP FUNCTION IF EXISTS sp_update_campaign_status(UUID, TEXT, JSONB, FLOAT, TEXT);
+DROP FUNCTION IF EXISTS sp_update_campaign_status(UUID, TEXT, JSONB, FLOAT, TEXT, BOOLEAN, TEXT);
 
 CREATE OR REPLACE FUNCTION sp_update_campaign_status(
     p_campaign_id   UUID,
     p_status        TEXT,
-    p_strategy_doc  JSONB  DEFAULT NULL,
-    p_audit_score   FLOAT  DEFAULT NULL,
-    p_error         TEXT   DEFAULT NULL
+    p_strategy_doc  JSONB    DEFAULT NULL,
+    p_audit_score   FLOAT    DEFAULT NULL,
+    p_error         TEXT     DEFAULT NULL,
+    p_resumable     BOOLEAN  DEFAULT NULL,
+    p_failed_node   TEXT     DEFAULT NULL
 )
 RETURNS TABLE(
     id              UUID,
@@ -15,8 +18,11 @@ RETURNS TABLE(
     goal            TEXT,
     objective       TEXT,
     platforms       TEXT[],
+    asset_types     TEXT[],
     funnel_stage    TEXT,
     num_variants    INT,
+    hero_products   TEXT[],
+    tone_override   TEXT,
     special_brief   TEXT,
     asset_formats   JSONB,
     status          TEXT,
@@ -24,6 +30,8 @@ RETURNS TABLE(
     retry_count     INT,
     audit_score     FLOAT,
     error           TEXT,
+    resumable       BOOLEAN,
+    failed_node     TEXT,
     created_at      TIMESTAMPTZ,
     updated_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ
@@ -37,6 +45,18 @@ BEGIN
         strategy_doc = COALESCE(p_strategy_doc, campaigns.strategy_doc),
         audit_score  = COALESCE(p_audit_score,  campaigns.audit_score),
         error        = COALESCE(p_error,         campaigns.error),
+        -- resumable/failed_node are explicitly overwritten (not COALESCEd):
+        -- a status transition to 'running' must clear a stale failure flag
+        -- even though the caller passes NULL, so a retried-then-succeeded
+        -- campaign doesn't keep showing a retry button.
+        resumable    = CASE
+                           WHEN p_status = 'running' THEN FALSE
+                           ELSE COALESCE(p_resumable, campaigns.resumable)
+                       END,
+        failed_node  = CASE
+                           WHEN p_status = 'running' THEN NULL
+                           ELSE COALESCE(p_failed_node, campaigns.failed_node)
+                       END,
         completed_at = CASE
                            WHEN p_status IN ('done', 'failed') THEN NOW()
                            ELSE campaigns.completed_at
@@ -47,11 +67,14 @@ BEGIN
         campaigns.id, campaigns.business_id, campaigns.user_id,
         campaigns.campaign_name, campaigns.goal,
         campaigns.objective, campaigns.platforms,
-        campaigns.funnel_stage, campaigns.num_variants,
-        campaigns.special_brief, campaigns.asset_formats,
-        campaigns.status, campaigns.strategy_doc,
-        campaigns.retry_count, campaigns.audit_score,
-        campaigns.error, campaigns.created_at,
-        campaigns.updated_at, campaigns.completed_at;
+        campaigns.asset_types, campaigns.funnel_stage,
+        campaigns.num_variants, campaigns.hero_products,
+        campaigns.tone_override, campaigns.special_brief,
+        campaigns.asset_formats, campaigns.status,
+        campaigns.strategy_doc, campaigns.retry_count,
+        campaigns.audit_score, campaigns.error,
+        campaigns.resumable, campaigns.failed_node,
+        campaigns.created_at, campaigns.updated_at,
+        campaigns.completed_at;
 END;
 $$;

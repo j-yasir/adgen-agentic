@@ -39,11 +39,13 @@ def deep_competitor_analysis(competitor_name: str, industry: str) -> str:
             f"Extract and structure:\n"
             f"1. Their market positioning and key messaging\n"
             f"2. Ad formats and platforms they use\n"
-            f"3. Hooks and copy patterns from their recent ads\n"
-            f"4. Strengths we should acknowledge\n"
-            f"5. Weaknesses or gaps we can exploit\n"
-            f"6. What makes them different from us\n\n"
-            f"Be specific — cite actual ad copy, formats, and patterns where possible."
+            f"3. ACTUAL hook text and ad copy examples (not summaries like "
+            f"'recipe integration' — write the real hook text they use)\n"
+            f"4. For each hook, note the format (reel/carousel/static) and platform\n"
+            f"5. Strengths we should acknowledge\n"
+            f"6. Weaknesses or gaps we can exploit\n"
+            f"7. What makes them different from us\n\n"
+            f"Be specific — quote actual ad copy where possible."
         ),
     ))
     return synthesis
@@ -90,7 +92,12 @@ def research_platform_trends(platform: str, industry: str, objective: str) -> st
             f"3. Optimal posting times and frequency\n"
             f"4. Benchmark CTR and engagement rates for {industry}\n"
             f"5. Algorithm preferences and content themes that perform well\n"
-            f"6. Platform-specific dos and don'ts for ads\n\n"
+            f"6. Platform-specific dos and don'ts for ads\n"
+            f"7. TECHNICAL AD SPECS for each format:\n"
+            f"   - Aspect ratio (9:16, 1:1, 4:5, 16:9)\n"
+            f"   - Max video duration in seconds\n"
+            f"   - Caption/text character limits\n"
+            f"   - Any restrictions (text overlay %, safe zones, etc.)\n\n"
             f"Be specific with numbers and examples where available."
         ),
     ))
