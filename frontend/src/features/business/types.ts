@@ -140,7 +140,7 @@ export type ComplianceFormSection = {
 };
 
 export type CreateBusinessRequest = {
-  onboarding_path: "form";
+  onboarding_path: "form" | "url";
   company: CompanyFormSection;
   product: ProductFormSection;
   audience: AudienceFormSection;

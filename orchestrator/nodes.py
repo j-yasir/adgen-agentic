@@ -8,7 +8,7 @@ from langgraph.types import interrupt
 
 from db.session import SessionLocal
 from repos import business_repo, campaign_repo
-from services import streaming_service
+from services import business_service, streaming_service
 from utils.logger import get_logger
 from utils.storage import save_generation
 
@@ -142,8 +142,12 @@ async def load_bko(state: CampaignState) -> dict:
         _emit(db, state["campaign_id"], "status_changed", "orchestrator",
               {"status": "running", "message": "BKO loaded — starting research"})
 
+        bko = business_service.assemble_products_into_bko(
+            db, state["business_id"], state["user_id"], business.get("bko") or {},
+        )
+
         result = {
-            "bko":            business.get("bko") or {},
+            "bko":            bko,
             "campaign_name":  campaign.get("campaign_name"),
             "objective":      campaign["objective"],
             "platforms":      campaign["platforms"],

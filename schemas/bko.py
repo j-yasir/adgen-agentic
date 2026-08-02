@@ -26,11 +26,16 @@ class BKOIdentity(BaseModel):
     mission: Optional[str] = None
     tagline: Optional[str] = None
     brand_story: Optional[str] = None
+    logo_url: Optional[str] = Field(
+        default=None,
+        description="Local storage path to the uploaded business logo — resolved by asset-producing agents",
+    )
 
 
 # ── Section 2: Offerings ──────────────────────────────────────────────────────
 
 class Product(BaseModel):
+    id: Optional[str] = None
     name: str
     type: Literal[
         "saas_product", "physical", "service", "subscription", "digital", "marketplace"
@@ -46,6 +51,11 @@ class Product(BaseModel):
     pricing_details: Optional[str] = None
     unique_selling_points: list[str] = Field(default_factory=list)
     target_use_case: Optional[str] = None
+    image_urls: list[str] = Field(
+        default_factory=list,
+        description="Local storage paths to uploaded real product photos, most-preferred first. "
+                    "Asset-producing agents resolve to these before falling back to AI-generated approximations.",
+    )
 
 
 class BKOOfferings(BaseModel):

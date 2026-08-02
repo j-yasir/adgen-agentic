@@ -4,7 +4,7 @@ import uuid
 
 from sqlalchemy.orm import Session
 
-from repos import business_repo
+from repos import business_repo, product_repo
 from schemas.business import (
     AudienceFormSection,
     BrandFormSection,
@@ -16,12 +16,12 @@ from schemas.business import (
     ComplianceFormSection,
     CreateBusinessRequest,
     MarketingFormSection,
-    ProductFormSection,
     SocialProofFormSection,
     TestimonialFormEntry,
     UpdateBusinessRequest,
 )
 from services import bko_service
+from utils import storage
 from utils.exceptions import NotFoundError
 from utils.logger import get_logger
 
@@ -52,6 +52,28 @@ def create(
         "Business created id=%s user_id=%s completeness=%.0f%%",
         row["id"], user_id, bko.meta.completeness_score * 100,
     )
+
+    if data.product is not None:
+        p = data.product
+        product_repo.create(
+            db,
+            business_id=row["id"],
+            user_id=user_id,
+            name=p.name,
+            type=p.product_type,
+            is_hero=True,
+            description=p.description,
+            key_features=p.key_features,
+            benefits=p.key_benefits,
+            pricing_model=p.pricing_model,
+            pricing_tier=p.pricing_tier,
+            pricing_details=p.pricing_details,
+            unique_selling_points=p.unique_selling_points,
+            target_use_case=p.target_use_case,
+        )
+        logger.info("Convenience-created product '%s' for business_id=%s", p.name, row["id"])
+
+    row["bko"] = assemble_products_into_bko(db, row["id"], user_id, row.get("bko") or {})
     return BusinessResponse(**row)
 
 
@@ -65,12 +87,15 @@ def get_one(
     if not row:
         logger.warning("Business not found: id=%s user_id=%s", business_id, user_id)
         raise NotFoundError(f"Business {business_id} not found")
+    row["bko"] = assemble_products_into_bko(db, business_id, user_id, row.get("bko") or {})
     return BusinessResponse(**row)
 
 
 def get_all(db: Session, user_id: uuid.UUID) -> BusinessListResponse:
     logger.debug("Listing businesses for user_id=%s", user_id)
     rows = business_repo.get_all_for_user(db, user_id)
+    for r in rows:
+        r["bko"] = assemble_products_into_bko(db, r["id"], user_id, r.get("bko") or {})
     logger.info("Found %d businesses for user_id=%s", len(rows), user_id)
     return BusinessListResponse(
         businesses=[BusinessResponse(**r) for r in rows],
@@ -109,6 +134,7 @@ def update(
         "Business updated id=%s new_version=%d completeness=%.0f%%",
         business_id, new_bko.meta.version, new_bko.meta.completeness_score * 100,
     )
+    row["bko"] = assemble_products_into_bko(db, business_id, user_id, row.get("bko") or {})
     return BusinessResponse(**row)
 
 
@@ -118,7 +144,105 @@ def delete(db: Session, business_id: uuid.UUID, user_id: uuid.UUID) -> None:
     if not deleted:
         logger.warning("Delete failed — not found: id=%s user_id=%s", business_id, user_id)
         raise NotFoundError(f"Business {business_id} not found")
+    storage.delete_business_assets_dir(str(business_id))
     logger.info("Business deleted id=%s", business_id)
+
+
+# ── Brand asset uploads (logo, product photos) ────────────────────────────────
+#
+# These mutate the stored BKO dict directly and call business_repo.update_bko()
+# — deliberately bypassing build_from_form()/_merge_update(). Routing an asset
+# upload through the full form-rebuild pipeline would require reconstructing
+# an entire CompanyFormSection/ProductFormSection just to change one URL, and
+# risks the rebuild dropping fields the caller's payload doesn't happen to
+# mention. A direct, surgical mutation of the one field that changed is both
+# simpler and safer.
+
+def _get_business_and_bko(db: Session, business_id: uuid.UUID, user_id: uuid.UUID) -> tuple[dict, dict]:
+    existing = business_repo.get_by_id(db, business_id, user_id)
+    if not existing:
+        raise NotFoundError(f"Business {business_id} not found")
+    return existing, (existing.get("bko") or {})
+
+
+def _save_bko(db: Session, business_id: uuid.UUID, user_id: uuid.UUID,
+              existing: dict, bko: dict) -> BusinessResponse:
+    row = business_repo.update_bko(
+        db, business_id=business_id, user_id=user_id,
+        bko=bko, onboarding_status=existing.get("onboarding_status", "complete"),
+    )
+    if not row:
+        raise NotFoundError(f"Business {business_id} not found")
+    return BusinessResponse(**row)
+
+
+def upload_logo(
+    db: Session, business_id: uuid.UUID, user_id: uuid.UUID, file_bytes: bytes,
+) -> BusinessResponse:
+    logger.info("Uploading logo for business_id=%s", business_id)
+    existing, bko = _get_business_and_bko(db, business_id, user_id)
+
+    old_logo = (bko.get("identity") or {}).get("logo_url")
+    path = storage.save_business_logo(str(business_id), file_bytes)
+    if old_logo and old_logo != path:
+        storage.delete_business_asset(old_logo)
+
+    bko.setdefault("identity", {})["logo_url"] = path
+    logger.info("Logo stored business_id=%s path=%s", business_id, path)
+    return _save_bko(db, business_id, user_id, existing, bko)
+
+
+def delete_logo(db: Session, business_id: uuid.UUID, user_id: uuid.UUID) -> BusinessResponse:
+    logger.info("Deleting logo for business_id=%s", business_id)
+    existing, bko = _get_business_and_bko(db, business_id, user_id)
+
+    logo_url = (bko.get("identity") or {}).get("logo_url")
+    if logo_url:
+        storage.delete_business_asset(logo_url)
+    bko.setdefault("identity", {})["logo_url"] = None
+    return _save_bko(db, business_id, user_id, existing, bko)
+
+
+# ── Products — assembled into the BKO at read time ────────────────────────────
+#
+# Products live in real relational tables (see repos/product_repo.py), not in
+# the BKO JSONB blob — this bridge keeps every agent-facing consumer of
+# bko.offerings.products_services unchanged (they read a list of plain dicts
+# with name/description/unique_selling_points/is_hero, exactly what this
+# produces) while giving products a stable ID and independent CRUD lifecycle.
+
+def assemble_products_into_bko(
+    db: Session, business_id: uuid.UUID | str, user_id: uuid.UUID | str, bko: dict,
+) -> dict:
+    rows = product_repo.list_with_images_for_business(db, business_id, user_id)
+    products: list[dict] = []
+    hero_name: str | None = None
+    for r in rows:
+        products.append({
+            "id": str(r["id"]),
+            "name": r["name"],
+            "type": r["type"],
+            "is_hero": r["is_hero"],
+            "description": r["description"],
+            "key_features": r["key_features"] or [],
+            "benefits": r["benefits"] or [],
+            "pricing_model": r["pricing_model"],
+            "pricing_tier": r["pricing_tier"],
+            "pricing_details": r["pricing_details"],
+            "unique_selling_points": r["unique_selling_points"] or [],
+            "target_use_case": r["target_use_case"],
+            "image_urls": [img["storage_url"] for img in (r.get("images") or [])],
+        })
+        if r["is_hero"] and hero_name is None:
+            hero_name = r["name"]
+
+    bko = dict(bko)
+    offerings = dict(bko.get("offerings") or {})
+    offerings["products_services"] = products
+    offerings["hero_product"] = hero_name or offerings.get("hero_product")
+    bko["offerings"] = offerings
+    bko["meta"] = bko_service.recompute_completeness_meta(bko)
+    return bko
 
 
 # ── Merge helper for PATCH ────────────────────────────────────────────────────
@@ -134,7 +258,6 @@ def _merge_update(
         return existing_bko.get(key) or {}
 
     identity   = _s("identity")
-    offerings  = _s("offerings")
     aud        = _s("audience")
     brand_data = _s("brand")
     comp_data  = _s("competitive_position")
@@ -142,7 +265,6 @@ def _merge_update(
     sp_data    = _s("social_proof")
     cpl_data   = _s("compliance")
 
-    hero = (offerings.get("products_services") or [{}])[0]
     voice_data  = brand_data.get("voice") or {}
     visual_data = brand_data.get("visual_identity") or {}
     primary_aud = (aud.get("primary") or {})
@@ -164,23 +286,15 @@ def _merge_update(
         headquarters=identity.get("headquarters"),
         employee_range=identity.get("employee_range"),
         sub_industry=identity.get("sub_industry"),
+        logo_url=identity.get("logo_url"),
     )
 
-    product = data.product or ProductFormSection(
-        name=hero.get("name", ""),
-        product_type=hero.get("type", "service"),
-        description=hero.get("description", ""),
-        key_features=hero.get("key_features", []),
-        key_benefits=hero.get("benefits", []),
-        unique_selling_points=hero.get("unique_selling_points", []),
-        pricing_model=hero.get("pricing_model", "subscription"),
-        pricing_tier=hero.get("pricing_tier", "mid"),
-        pricing_details=hero.get("pricing_details"),
-        primary_cta=offerings.get("primary_cta", "Learn more"),
-        conversion_url=offerings.get("conversion_url"),
-        free_trial_available=offerings.get("free_trial_available", False),
-        demo_available=offerings.get("demo_available", False),
-    )
+    # Products no longer live in the BKO JSONB — nothing to reconstruct a
+    # fallback from. `data.product` passes through as-is: None unless this
+    # specific PATCH call explicitly included a product section (in which
+    # case bko_service.build_from_form treats it as a fresh CTA/offer default,
+    # since the real product list is assembled separately at read time).
+    product = data.product
 
     audience = data.audience or AudienceFormSection(
         age_range=demo.get("age_range"),

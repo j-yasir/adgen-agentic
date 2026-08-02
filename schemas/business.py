@@ -24,6 +24,10 @@ class CompanyFormSection(BaseModel):
     description: str = Field(..., min_length=30, description="Plain-English description, at least one sentence")
     mission: Optional[str] = None
     brand_story: Optional[str] = None
+    logo_url: Optional[str] = Field(
+        default=None,
+        description="Set via POST /businesses/{id}/logo, not submitted directly through onboarding",
+    )
 
 
 class ProductFormSection(BaseModel):
@@ -168,7 +172,7 @@ class ComplianceFormSection(BaseModel):
 class CreateBusinessRequest(BaseModel):
     onboarding_path: Literal["form"] = "form"   # only form implemented for now
     company: CompanyFormSection
-    product: ProductFormSection
+    product: Optional[ProductFormSection] = None
     audience: AudienceFormSection
     brand: BrandFormSection
     competitive: CompetitiveFormSection

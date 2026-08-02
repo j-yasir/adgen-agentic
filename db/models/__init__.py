@@ -5,6 +5,8 @@ from db.models.base import Base
 from db.models.user import User
 from db.models.refresh_token import RefreshToken
 from db.models.business import Business
+from db.models.product import Product
+from db.models.product_image import ProductImage
 from db.models.campaign import Campaign
 from db.models.business_embedding import BusinessEmbedding
 from db.models.campaign_event import CampaignEvent
@@ -17,6 +19,8 @@ __all__ = [
     "User",
     "RefreshToken",
     "Business",
+    "Product",
+    "ProductImage",
     "Campaign",
     "BusinessEmbedding",
     "CampaignEvent",

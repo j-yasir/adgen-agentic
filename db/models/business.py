@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from db.models.user import User
     from db.models.campaign import Campaign
     from db.models.business_embedding import BusinessEmbedding
+    from db.models.product import Product
 
 
 class Business(Base):
@@ -63,6 +64,9 @@ class Business(Base):
     )
     embeddings: Mapped[list[BusinessEmbedding]] = relationship(
         "BusinessEmbedding", back_populates="business", cascade="all, delete-orphan"
+    )
+    products: Mapped[list[Product]] = relationship(
+        "Product", back_populates="business", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

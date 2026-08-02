@@ -24,7 +24,6 @@ from schemas.bko import (
     Demographics,
     FunnelStrategy,
     KeyMessagesByFunnel,
-    Product,
     Psychographics,
     ReviewPlatform,
     Testimonial,
@@ -48,6 +47,18 @@ def _check(value: object) -> bool:
     return True
 
 
+def recompute_completeness_meta(bko: dict) -> dict:
+    """Recompute completeness against a BKO dict that already has its real
+    products/images assembled in (see business_service.assemble_products_into_bko).
+    Not persisted back to the DB — computed fresh on every read."""
+    parsed = BKO.model_validate(bko)
+    score, missing = _compute_completeness(parsed)
+    meta = dict(bko.get("meta") or {})
+    meta["completeness_score"] = score
+    meta["missing_fields"] = missing
+    return meta
+
+
 def _compute_completeness(bko: BKO) -> tuple[float, list[str]]:
     checks: list[tuple[str, object]] = [
         # identity
@@ -59,6 +70,10 @@ def _compute_completeness(bko: BKO) -> tuple[float, list[str]]:
         # offerings
         ("offerings.products_services",     bko.offerings.products_services),
         ("offerings.conversion_url",        bko.offerings.conversion_url),
+        ("offerings.products_services[0].image_urls",
+            bko.offerings.products_services[0].image_urls if bko.offerings.products_services else None),
+        # identity — brand assets
+        ("identity.logo_url",               bko.identity.logo_url),
         # audience
         ("audience.primary.pain_points",    bko.audience.primary.pain_points),
         ("audience.primary.desired_outcomes", bko.audience.primary.desired_outcomes),
@@ -120,29 +135,31 @@ def build_from_form(req: CreateBusinessRequest) -> BKO:
         mission=c.mission,
         tagline=c.tagline,
         brand_story=c.brand_story,
+        logo_url=c.logo_url,
     )
 
     # ── offerings ─────────────────────────────────────────────────────────────
-    product = Product(
-        name=p.name,
-        type=p.product_type,
-        is_hero=True,
-        description=p.description,
-        key_features=p.key_features,
-        benefits=p.key_benefits,
-        pricing_model=p.pricing_model,
-        pricing_tier=p.pricing_tier,
-        pricing_details=p.pricing_details,
-        unique_selling_points=p.unique_selling_points,
-        target_use_case=p.target_use_case,
-    )
+    # products_services is always assembled at read time from the real
+    # products/product_images tables (see business_service.assemble_products_into_bko)
+    # — never written here, even when `p` is provided below.
+    if p is not None:
+        primary_cta = p.primary_cta
+        conversion_url = p.conversion_url
+        free_trial_available = p.free_trial_available
+        demo_available = p.demo_available
+    else:
+        primary_cta = "Learn more"
+        conversion_url = None
+        free_trial_available = False
+        demo_available = False
+
     offerings = BKOOfferings(
-        products_services=[product],
-        hero_product=p.name,
-        free_trial_available=p.free_trial_available,
-        demo_available=p.demo_available,
-        primary_cta=p.primary_cta,
-        conversion_url=p.conversion_url,
+        products_services=[],
+        hero_product=None,
+        free_trial_available=free_trial_available,
+        demo_available=demo_available,
+        primary_cta=primary_cta,
+        conversion_url=conversion_url,
     )
 
     # ── audience ──────────────────────────────────────────────────────────────
@@ -234,11 +251,11 @@ def build_from_form(req: CreateBusinessRequest) -> BKO:
         f"{primary_segment.pain_points[0]} — there's a better way."
         if primary_segment.pain_points else None
     )
-    mofu = (
-        f"{p.name} gives you {primary_segment.desired_outcomes[0]}."
-        if primary_segment.desired_outcomes else None
-    )
-    bofu = f"{p.primary_cta}." if p.primary_cta else None
+    mofu = None
+    if primary_segment.desired_outcomes:
+        outcome = primary_segment.desired_outcomes[0]
+        mofu = f"{p.name} gives you {outcome}." if p is not None else f"You get {outcome}."
+    bofu = f"{primary_cta}." if primary_cta else None
 
     marketing_context = BKOMarketingContext(
         active_platforms=mkt.active_platforms,
@@ -273,7 +290,7 @@ def build_from_form(req: CreateBusinessRequest) -> BKO:
 
     # ── messaging ─────────────────────────────────────────────────────────────
     # Build proof points from stats + USPs
-    proof_points = list(sp.key_stats) + list(p.unique_selling_points)
+    proof_points = list(sp.key_stats) + (list(p.unique_selling_points) if p is not None else [])
 
     # Build headline formulas from competitive position
     headline_formulas = [

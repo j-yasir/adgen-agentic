@@ -24,11 +24,11 @@ BEGIN
     UPDATE businesses
     SET
         bko               = p_bko,
-        bko_version       = bko_version + 1,
+        bko_version       = businesses.bko_version + 1,
         onboarding_status = p_onboarding_status,
         updated_at        = NOW()
-    WHERE id = p_business_id
-      AND user_id = p_user_id
+    WHERE businesses.id = p_business_id
+      AND businesses.user_id = p_user_id
     RETURNING
         businesses.id,
         businesses.user_id,

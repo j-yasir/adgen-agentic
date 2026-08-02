@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, UploadFile, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
@@ -82,3 +82,36 @@ def delete_business(
     current_user: dict = Depends(get_current_user),
 ):
     business_service.delete(db, business_id=business_id, user_id=current_user["id"])
+
+
+# ── Brand assets (logo, product photos) ───────────────────────────────────────
+# Real files agents ground generation in, instead of an AI approximation.
+# Images only (png/jpg/webp, validated by decoding — not by trusting the
+# client's filename or Content-Type header), 8MB cap.
+
+@router.post(
+    "/{business_id}/logo",
+    response_model=BusinessResponse,
+    summary="Upload/replace the business logo",
+)
+async def upload_logo(
+    business_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    data = await file.read()
+    return business_service.upload_logo(db, business_id=business_id, user_id=current_user["id"], file_bytes=data)
+
+
+@router.delete(
+    "/{business_id}/logo",
+    response_model=BusinessResponse,
+    summary="Remove the business logo",
+)
+def delete_logo(
+    business_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return business_service.delete_logo(db, business_id=business_id, user_id=current_user["id"])

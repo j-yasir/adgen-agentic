@@ -81,6 +81,15 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Agent colour palette */
+  --agent-researcher: #6366f1;
+  --agent-strategist: #8b5cf6;
+  --agent-producer: #ec4899;
+  --agent-auditor: #22c55e;
+  --agent-amber: #f59e0b;
+  --agent-cyan: #22d3ee;
+  --hero-grad: linear-gradient(135deg, #1e1048 0%, #3b1078 25%, #5b21b6 55%, #7c3aed 80%, #a855f7 100%);
 }
 
 .dark {

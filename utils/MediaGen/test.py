@@ -1,52 +1,30 @@
 """
-Quick smoke test for MediaGen utility.
-Run from project root: python3 -m app.utilities.MediaGen.test
+Smoke test for the nano-banana (kie.ai) image provider.
+Run from project root: python -m utils.MediaGen.test
 """
-import sys
-from pathlib import Path
-
-# Support direct execution
-if __package__ is None or __package__ == "":
-    sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-
 from dotenv import load_dotenv
+
 load_dotenv()
 
-from app.utilities.MediaGen import MediaGenService, MediaGenConfig, ImageRequest
+from utils.MediaGen import MediaGenService, MediaGenConfig, ImageRequest
 
 
-def test_seedream_text_to_image():
-    print("\n--- Test: Seedream text-to-image ---")
+def test_nano_banana_text_to_image():
+    print("\n--- Test: nano-banana text-to-image ---")
     service = MediaGenService(MediaGenConfig(
-        provider="seedream",
-        model_name="seedream-5-0-260128",
+        provider="nano-banana",
+        model_name="google/nano-banana",
     ))
     result = service.generate(ImageRequest(
-        prompt="A professional portrait of a young man with a textured quiff hairstyle, photorealistic, 85mm lens, DSLR quality",
-        output_path="Media/test_seedream_t2i.png",
-    ))
-    print(result)
-    return result.success
-
-
-def test_seedream_image_to_image():
-    print("\n--- Test: Seedream image-to-image ---")
-    input_image = "Media/runs/inputs/yasir.png"
-    service = MediaGenService(MediaGenConfig(
-        provider="seedream",
-        model_name="seedream-5-0-260128",
-    ))
-    result = service.generate(ImageRequest(
-        prompt="Same person with a classic pompadour hairstyle, photorealistic, 85mm lens",
-        image_path=input_image,
-        output_path="Media/test_seedream_i2i.png",
+        prompt="A minimalist product photo of a glass jar of apricot jam on a wooden "
+               "table, soft natural light, photorealistic, studio quality",
+        output_path="Media/test_nano_banana_t2i.png",
+        aspect_ratio="1:1",
     ))
     print(result)
     return result.success
 
 
 if __name__ == "__main__":
-    t2i_ok = test_seedream_text_to_image()
-    i2i_ok = test_seedream_image_to_image()
-    print(f"\nResults: text-to-image={'PASS' if t2i_ok else 'FAIL'}, "
-          f"image-to-image={'PASS' if i2i_ok else 'FAIL'}")
+    t2i_ok = test_nano_banana_text_to_image()
+    print(f"\nResult: text-to-image={'PASS' if t2i_ok else 'FAIL'}")

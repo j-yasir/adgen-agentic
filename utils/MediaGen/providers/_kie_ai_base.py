@@ -22,9 +22,9 @@ from abc import abstractmethod
 import requests
 from PIL import Image
 
-from app.config import settings
-from app.utilities.MediaGen.base import BaseMediaProvider
-from app.utilities.MediaGen.schemas import MediaGenConfig, MediaGenResponse
+from config import settings
+from ..base import BaseMediaProvider
+from ..schemas import MediaGenConfig, MediaGenResponse
 
 # ── kie.ai API endpoints ──────────────────────────────────────────────────────
 BASE_URL          = "https://api.kie.ai"
@@ -48,13 +48,13 @@ class KieAIBaseProvider(BaseMediaProvider):
         super().__init__(config)
         self.api_key = (
             config.api_key
-            or os.getenv("SEEDREAM_API_KEY")
-            or getattr(settings, "SEEDREAM_API_KEY", None)
+            or os.getenv("KIE_API_KEY")
+            or getattr(settings, "KIE_API_KEY", None)
         )
         if not self.api_key:
             raise ValueError(
-                f"{self.__class__.__name__}: SEEDREAM_API_KEY is not set. "
-                "All kie.ai providers share this key."
+                f"{self.__class__.__name__}: KIE_API_KEY is not set. "
+                "All kie.ai providers (including chat models) share this key."
             )
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -121,7 +121,7 @@ class KieAIBaseProvider(BaseMediaProvider):
         try:
             resp = requests.post(
                 UPLOAD_URL,
-                json={"base64Data": data_uri, "uploadPath": "images/hairstyle"},
+                json={"base64Data": data_uri, "uploadPath": "images/adgen"},
                 headers=self.headers,
                 timeout=60,
             )
@@ -156,11 +156,6 @@ class KieAIBaseProvider(BaseMediaProvider):
 
     def _poll_task(self, task_id: str):
         """Poll recordInfo until state == success/fail. Returns (result_url, error)."""
-        try:
-            from app.agents.hairstyle_agent.utils.progress import emit as _emit
-        except ImportError:
-            def _emit(msg): pass  # noqa: E704
-
         for attempt in range(1, MAX_POLL_ATTEMPTS + 1):
             time.sleep(POLL_INTERVAL)
             try:
@@ -181,7 +176,6 @@ class KieAIBaseProvider(BaseMediaProvider):
             data = resp.json().get("data") or {}
             state = data.get("state", "")
             print(f"   [{self.__class__.__name__}] Polling {task_id} → state={state}")
-            _emit({"event": "phase4_progress", "status": "polling", "attempt": attempt, "state": state})
 
             if state == "success":
                 try:
