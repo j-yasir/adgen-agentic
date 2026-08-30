@@ -20,6 +20,7 @@ type Props = {
   data: Record<string, unknown>;
   onResume: (approved: boolean, feedback?: string) => void;
   isResuming: boolean;
+  readonly?: boolean;
 };
 
 function SectionHeader({
@@ -111,7 +112,7 @@ function AssetPlanCard({ asset, index }: { asset: Record<string, unknown>; index
   );
 }
 
-export function StrategyReview({ data, onResume, isResuming }: Props) {
+export function StrategyReview({ data, onResume, isResuming, readonly = false }: Props) {
   const [feedback, setFeedback] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
 
@@ -249,38 +250,40 @@ export function StrategyReview({ data, onResume, isResuming }: Props) {
           </div>
         )}
 
-        <Separator className="opacity-20" />
+        {!readonly && (
+          <>
+            <Separator className="opacity-20" />
 
-        {/* Feedback */}
-        {showFeedback && (
-          <Textarea
-            value={feedback}
-            onChange={(e) => setFeedback(e.target.value)}
-            placeholder="e.g. 'The TikTok hook is too generic' or 'Add more urgency to the email CTA'"
-            rows={3}
-            className="border-border/40"
-          />
+            {showFeedback && (
+              <Textarea
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                placeholder="e.g. 'The TikTok hook is too generic' or 'Add more urgency to the email CTA'"
+                rows={3}
+                className="border-border/40"
+              />
+            )}
+
+            <div className="flex items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 -mx-5 px-5 border-t border-border/20">
+              <Button variant="outline" size="sm" onClick={() => setShowFeedback(!showFeedback)}>
+                <MessageSquare className="mr-1 h-4 w-4" />
+                {showFeedback ? "Hide Notes" : "Add Notes"}
+              </Button>
+              <div className="flex-1" />
+              <Button variant="outline" onClick={() => onResume(false, feedback || "Strategy rejected")} disabled={isResuming}>
+                Reject & Redo
+              </Button>
+              <Button
+                className="bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
+                onClick={() => onResume(true, feedback || undefined)}
+                disabled={isResuming}
+              >
+                {isResuming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Approve Strategy
+              </Button>
+            </div>
+          </>
         )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-2 sticky bottom-0 bg-background/80 backdrop-blur-sm py-3 -mx-5 px-5 border-t border-border/20">
-          <Button variant="outline" size="sm" onClick={() => setShowFeedback(!showFeedback)}>
-            <MessageSquare className="mr-1 h-4 w-4" />
-            {showFeedback ? "Hide Notes" : "Add Notes"}
-          </Button>
-          <div className="flex-1" />
-          <Button variant="outline" onClick={() => onResume(false, feedback || "Strategy rejected")} disabled={isResuming}>
-            Reject & Redo
-          </Button>
-          <Button
-            className="bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg shadow-indigo-500/20"
-            onClick={() => onResume(true, feedback || undefined)}
-            disabled={isResuming}
-          >
-            {isResuming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Approve Strategy
-          </Button>
-        </div>
       </div>
     </ScrollArea>
   );

@@ -98,4 +98,45 @@ export async function apiClient<T>(
   return body as T;
 }
 
+/**
+ * Upload a file as multipart/form-data.
+ * Do NOT set Content-Type — the browser must set it with the boundary string.
+ */
+export async function apiClientUpload<T>(
+  endpoint: string,
+  formData: FormData,
+  method: "POST" | "PUT" | "PATCH" = "POST"
+): Promise<T> {
+  const headers: Record<string, string> = {};
+
+  if (tokens.accessToken) {
+    headers["Authorization"] = `Bearer ${tokens.accessToken}`;
+  }
+
+  let res = await fetch(`/api/v1${endpoint}`, { method, headers, body: formData });
+
+  if (res.status === 401 && tokens.refreshToken) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      headers["Authorization"] = `Bearer ${tokens.accessToken}`;
+      res = await fetch(`/api/v1${endpoint}`, { method, headers, body: formData });
+    }
+  }
+
+  if (res.status === 204) return undefined as T;
+
+  const body = await res.json();
+
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      body.error || "UNKNOWN",
+      body.message || "Upload failed",
+      body.detail
+    );
+  }
+
+  return body as T;
+}
+
 export { ApiError };

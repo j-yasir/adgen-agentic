@@ -19,6 +19,16 @@ class CampaignState(TypedDict):
     tone_override:  str | None    # override BKO tone for this campaign
     special_brief:  str | None
 
+    # Optional per-asset product-selection override (asset_id -> product_id).
+    # Populated once a per-asset product-selection UI exists; empty/absent today.
+    product_overrides: dict[str, str] | None
+
+    # Optional per-asset secondary links for the email sub-agent
+    # (asset_id -> {label: url}), e.g. a campaign-specific landing page beyond
+    # the primary CTA. Pipeline-side hook only — no HITL/API surface captures
+    # this yet, same scoping as product_overrides. See EMAIL_TEMPLATE_AGENT.md §6.2.
+    secondary_links: dict[str, dict[str, str]] | None
+
     # ── Written by Researcher ──────────────────────────────────────────────────
     research_report: dict | None
 

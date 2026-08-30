@@ -1,0 +1,28 @@
+{
+  "name": "Asics Gel-Kayano 21",
+  "type": "physical",
+  "is_hero": false,
+  "description": "Pre-loved Asics Gel-Kayano 21 running shoe, EUR 46 / UK 10.5 / USA 11.5, graded 'Excellent' condition. 100% authentic, imported from the USA, unedited product photos show the shoe's actual condition.",
+  "key_features": [
+    "100% authentic — personally inspected before listing",
+    "Condition-graded: Excellent",
+    "Imported directly from the USA",
+    "Unedited product photos show the shoe's actual condition",
+    "7-day return/exchange window for size issues"
+  ],
+  "benefits": [
+    "Genuine Asics stability running shoe at a fraction of retail price",
+    "Verified authenticity — no risk of counterfeits",
+    "A more sustainable choice than buying new",
+    "Hard-to-find large size (EUR 46) available immediately"
+  ],
+  "pricing_model": "one_time",
+  "pricing_tier": "low",
+  "pricing_details": "PKR 7,899 (compare at PKR 12,999) — price varies by size and condition grade",
+  "unique_selling_points": [
+    "Every pair personally inspected for authenticity before listing",
+    "Transparent condition grading system, not just 'used'",
+    "Large/imported sizes not always available new in Pakistan"
+  ],
+  "target_use_case": "Long-distance running, stability and support for overpronation"
+}

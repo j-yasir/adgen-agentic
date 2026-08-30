@@ -9,6 +9,7 @@ from db.models.product import Product
 from db.models.product_image import ProductImage
 from db.models.campaign import Campaign
 from db.models.business_embedding import BusinessEmbedding
+from db.models.business_event import BusinessEvent
 from db.models.campaign_event import CampaignEvent
 from db.models.asset import Asset
 from db.models.audit_log import AuditLog
@@ -23,6 +24,7 @@ __all__ = [
     "ProductImage",
     "Campaign",
     "BusinessEmbedding",
+    "BusinessEvent",
     "CampaignEvent",
     "Asset",
     "AuditLog",

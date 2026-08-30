@@ -12,6 +12,10 @@ export type BusinessResponse = {
   updated_at: string;
 };
 
+export type CreateBusinessFromUrlRequest = {
+  url: string;
+};
+
 export type BusinessListResponse = {
   businesses: BusinessResponse[];
   total: number;

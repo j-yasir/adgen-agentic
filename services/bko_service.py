@@ -329,7 +329,7 @@ def build_from_form(req: CreateBusinessRequest) -> BKO:
         social_proof=social_proof,
         messaging=messaging,
         compliance=compliance,
-        meta=BKOMeta(version=1, onboarding_path="form", generated_by="form"),
+        meta=BKOMeta(version=1, onboarding_path=req.onboarding_path, generated_by=req.onboarding_path),
     )
 
     score, missing = _compute_completeness(bko)

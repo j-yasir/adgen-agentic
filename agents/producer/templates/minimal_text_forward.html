@@ -1,0 +1,32 @@
+{% extends "_base.html" %}
+{% block body %}
+<tr><td style="padding:8px 40px 0;">
+<h1 style="margin:0; font-size:24px; line-height:1.35; color:#1a1a1a; text-align:center;">{{ headline }}</h1>
+</td></tr>
+
+{% if hero_image_url %}
+<tr><td align="center" style="padding:24px 40px;">
+<img src="{{ hero_image_url }}" width="420" style="width:70%; max-width:420px; display:block; border-radius:6px;" alt="">
+</td></tr>
+{% endif %}
+
+{% if intro_paragraph %}
+<tr><td style="padding:8px 40px 0;">
+<p style="margin:0; font-size:15px; line-height:1.7; color:#444444; text-align:center;">{{ intro_paragraph }}</p>
+</td></tr>
+{% endif %}
+
+<tr><td align="center" style="padding:24px 40px 8px;">
+<a href="{{ cta_url }}" style="{{ button_css }}">{{ cta_text }}</a>
+</td></tr>
+
+{% for p in remaining_paragraphs %}
+<tr><td style="padding:12px 40px 0;">
+<p style="margin:0; font-size:14px; line-height:1.7; color:#555555; text-align:center;">{{ p }}</p>
+</td></tr>
+{% endfor %}
+
+<tr><td align="center" style="padding:28px 40px 8px;">
+<a href="{{ cta_url }}" style="{{ button_css }}">{{ cta_text }}</a>
+</td></tr>
+{% endblock %}

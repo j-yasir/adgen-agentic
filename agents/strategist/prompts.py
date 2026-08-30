@@ -42,7 +42,10 @@ Hard constraints:
 - Exactly {num_variants} asset briefs. Not more, not fewer.
 - Every requested platform gets at least one asset.
 - Every requested asset type appears at least once if the count allows.
-- Never use an asset type that was not requested.
+- Never use an asset type that was not requested. If TikTok or YouTube is
+  in the platform list but "video_ad" is NOT in the asset types, use
+  static_image with format "9:16" for those platforms — do NOT invent a
+  video_ad entry.
 - hero_product must be chosen from the "Hero products" list in the Campaign
   Brief when that list is non-empty — never substitute a different BKO
   catalog product (e.g. the umbrella/parent product line name). Spread
@@ -54,6 +57,10 @@ Hard constraints:
 - Choose each asset's format from the platform specs in the research report
   (e.g. tiktok is 9:16 only; email assets always use platform "email" and
   format "email").
+- Google display ads: use asset_type "static_image" with format "1:1" or
+  "16:9". Text-only Google ad units (search_ad, responsive, banner) are also
+  valid formats for static_image on Google. Google MUST get its own asset_brief
+  when it is in the platform list — never skip it.
 - Set compliance_notes on any asset that needs a disclaimer or restriction,
   using the Compliance section of the input.
 
@@ -189,12 +196,26 @@ def build_planner_input(state: dict) -> str:
     tone = state.get("tone_override") or ((brand.get("voice") or {}).get("primary_tone")) or "professional"
     research = state.get("research_report") or {}
 
-    return (
+    platforms = state.get("platforms") or []
+    asset_types = state.get("asset_types") or []
+    video_platforms = {"tiktok", "youtube"}
+    tiktok_no_video = (
+        any(p in video_platforms for p in platforms) and "video_ad" not in asset_types
+    )
+    tiktok_note = (
+        "NOTE: TikTok/YouTube are in the platform list but 'video_ad' is NOT "
+        "in the asset types. Use static_image with format '9:16' for TikTok/YouTube — "
+        "do NOT use video_ad.\n"
+        if tiktok_no_video else ""
+    )
+
+    brief = (
         f"## Campaign Brief\n"
         f"Campaign: {state.get('campaign_name') or 'N/A'}\n"
         f"Objective: {state.get('objective', 'N/A')}\n"
-        f"Platforms: {', '.join(state.get('platforms') or [])}\n"
-        f"Asset types to produce: {', '.join(state.get('asset_types') or [])}\n"
+        f"Platforms: {', '.join(platforms)}\n"
+        f"Asset types to produce: {', '.join(asset_types)} — use ONLY these types, no others.\n"
+        f"{tiktok_note}"
         f"Funnel stage: {state.get('funnel_stage', 'N/A')}\n"
         f"Number of variants: {state.get('num_variants', 3)}\n"
         f"Hero products: {', '.join(state.get('hero_products') or []) or 'none specified'}\n"
@@ -202,6 +223,8 @@ def build_planner_input(state: dict) -> str:
         f"Audience awareness level (BKO default): "
         f"{(bko.get('audience') or {}).get('audience_awareness_level', 'N/A')}\n"
         f"Special brief from the user: {state.get('special_brief') or 'none'}\n\n"
+    )
+    return brief + (
         f"## Brand\n"
         f"Company: {identity.get('company_name', 'Unknown')} "
         f"({identity.get('industry', 'Unknown')})\n"

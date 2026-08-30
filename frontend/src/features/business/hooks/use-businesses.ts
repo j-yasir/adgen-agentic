@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { businessApi } from "../lib/api";
-import type { CreateBusinessRequest } from "../types";
+import type { CreateBusinessRequest, CreateBusinessFromUrlRequest } from "../types";
 
 export function useBusinesses() {
   return useQuery({
@@ -25,6 +25,27 @@ export function useCreateBusiness() {
     mutationFn: (data: CreateBusinessRequest) => businessApi.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["businesses"] });
+    },
+  });
+}
+
+export function useCreateBusinessFromUrl() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateBusinessFromUrlRequest) => businessApi.createFromUrl(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["businesses"] });
+    },
+  });
+}
+
+export function usePatchBkoField(businessId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ path, value }: { path: string; value: unknown }) =>
+      businessApi.patchBkoField(businessId, path, value),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["businesses", businessId], data);
     },
   });
 }

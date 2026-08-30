@@ -1,0 +1,43 @@
+{% extends "_base.html" %}
+
+{% block head_extra %}
+<style>
+  @media only screen and (max-width: 480px) {
+    .split-col { display:block !important; width:100% !important; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<tr><td style="padding:24px 32px 0;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+<tr>
+{% if hero_image_url %}
+<td class="split-col" valign="top" width="50%" style="padding-right:16px;">
+<img src="{{ hero_image_url }}" width="260" style="width:100%; display:block; border-radius:6px;" alt="">
+</td>
+{% endif %}
+<td class="split-col" valign="top" width="50%">
+<h1 style="margin:0 0 8px; font-size:22px; line-height:1.35; color:#1a1a1a;">{{ headline }}</h1>
+{% if intro_paragraph %}
+<p style="margin:0; font-size:14px; line-height:1.7; color:#444444;">{{ intro_paragraph }}</p>
+{% endif %}
+</td>
+</tr>
+</table>
+</td></tr>
+
+<tr><td align="center" style="padding:24px 32px 8px;">
+<a href="{{ cta_url }}" style="{{ button_css }}">{{ cta_text }}</a>
+</td></tr>
+
+{% for p in remaining_paragraphs %}
+<tr><td style="padding:12px 32px 0;">
+<p style="margin:0; font-size:14px; line-height:1.7; color:#444444;">{{ p }}</p>
+</td></tr>
+{% endfor %}
+
+<tr><td align="center" style="padding:24px 32px 8px;">
+<a href="{{ cta_url }}" style="{{ button_css }}">{{ cta_text }}</a>
+</td></tr>
+{% endblock %}

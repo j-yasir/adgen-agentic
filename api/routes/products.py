@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from api.dependencies import get_current_user
 from db.session import get_db
 from schemas.product import (
+    CreateProductFromUrlRequest,
     CreateProductRequest,
     ProductImageResponse,
     ProductListResponse,
@@ -15,6 +16,7 @@ from schemas.product import (
     UpdateProductRequest,
 )
 from services import product_service
+from utils.exceptions import ExternalServiceError
 
 router = APIRouter(prefix="/businesses/{business_id}/products", tags=["products"])
 
@@ -32,6 +34,36 @@ def create_product(
     current_user: dict = Depends(get_current_user),
 ):
     return product_service.create(db, business_id=business_id, user_id=current_user["id"], data=data)
+
+
+@router.post(
+    "/from-url",
+    response_model=ProductResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a product by researching a URL (no scraper — an LLM agent with web search)",
+    description=(
+        "Synchronous — a research agent (web_search only) identifies and researches "
+        "one product at (or featured on) the given URL, structures it into a full "
+        "product profile, and creates it. Separately, a deterministic (no LLM) step "
+        "tries to find and attach a real product photo via the page's og:image or "
+        "Product JSON-LD — a missing/failed image never blocks product creation, "
+        "the product is still returned, just without a photo."
+    ),
+)
+async def create_product_from_url(
+    business_id: uuid.UUID,
+    data: CreateProductFromUrlRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    from agents.business_researcher.validation import BusinessResearchError
+
+    try:
+        return await product_service.create_from_url(
+            db, business_id=business_id, user_id=current_user["id"], data=data,
+        )
+    except BusinessResearchError as exc:
+        raise ExternalServiceError(f"Product research failed: {exc}") from exc
 
 
 @router.get(

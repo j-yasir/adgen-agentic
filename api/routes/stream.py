@@ -13,10 +13,12 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from typing import Callable
+
 from api.dependencies import get_current_user_from_query
 from config import settings
 from db.session import SessionLocal, get_db
-from repos import campaign_repo
+from repos import business_repo, campaign_repo
 from utils.exceptions import NotFoundError
 from utils.logger import get_logger
 
@@ -24,7 +26,8 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/stream", tags=["stream"])
 
-_TERMINAL_EVENTS = {"campaign_done", "campaign_failed"}
+_CAMPAIGN_TERMINAL_EVENTS = {"campaign_done", "campaign_failed"}
+_BUSINESS_TERMINAL_EVENTS = {"business_ready", "business_failed"}
 _HEARTBEAT_INTERVAL = 15   # seconds between heartbeat frames
 _POLL_TIMEOUT = 2          # seconds each select() call blocks before looping
 
@@ -36,12 +39,12 @@ def _raw_dsn() -> str:
     return settings.DATABASE_URL.replace("postgresql+psycopg2://", "postgresql://", 1)
 
 
-def _open_listen_conn(dsn: str, campaign_id: str) -> psycopg2.extensions.connection:
+def _open_listen_conn(dsn: str, channel: str) -> psycopg2.extensions.connection:
     """Blocking: open a dedicated psycopg2 connection and issue LISTEN."""
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute(f'LISTEN "campaign_{campaign_id}"')
+    cur.execute(f'LISTEN "{channel}"')
     cur.close()
     return conn
 
@@ -51,10 +54,21 @@ def _format_sse(event: dict) -> str:
 
 
 # ── SSE generator ─────────────────────────────────────────────────────────────
+#
+# Shared by both /campaigns/{id} and /businesses/{id}: the LISTEN/NOTIFY,
+# catch-up, heartbeat, and reconnect mechanics are identical for both — only
+# the pg_notify channel name, which repo function re-reads full rows, and
+# which event_type values end the stream differ. Parameterized rather than
+# duplicated so a future fix to this fairly intricate async/psycopg2 plumbing
+# only has to happen once.
 
 async def _event_generator(
-    campaign_id: str,
+    *,
+    entity_id: str,
+    channel: str,
     after_seq: int,
+    get_events: Callable[..., list[dict]],
+    terminal_events: set[str],
 ) -> AsyncGenerator[str, None]:
     dsn = _raw_dsn()
     loop = asyncio.get_running_loop()
@@ -64,23 +78,29 @@ async def _event_generator(
     conn: Optional[psycopg2.extensions.connection] = None
     try:
         conn = await loop.run_in_executor(
-            None, _open_listen_conn, dsn, campaign_id
+            None, _open_listen_conn, dsn, channel
         )
-        logger.debug("SSE LISTEN open for campaign_id=%s after_seq=%s", campaign_id, after_seq)
+        logger.debug("SSE LISTEN open channel=%s after_seq=%s", channel, after_seq)
 
         # ── Catch-up: replay events already in DB ─────────────────────────────
+        # Send ALL missed events before checking for a terminal — a campaign
+        # can fail and then be retried, so `campaign_failed` is not necessarily
+        # the last event. We only close if the very last event was terminal.
         last_seq = after_seq
+        last_event_type: str | None = None
         db = SessionLocal()
         try:
-            missed = campaign_repo.get_events(db, campaign_id, after_seq=after_seq)
+            missed = get_events(db, entity_id, after_seq=after_seq)
             for event in missed:
                 last_seq = event["seq"]
+                last_event_type = event["event_type"]
                 yield _format_sse(event)
-                if event["event_type"] in _TERMINAL_EVENTS:
-                    logger.debug("Terminal event in catch-up for campaign_id=%s", campaign_id)
-                    return
         finally:
             db.close()
+
+        if last_event_type in terminal_events:
+            logger.debug("Last catch-up event is terminal channel=%s type=%s", channel, last_event_type)
+            return
 
         # ── Live stream via pg_notify ─────────────────────────────────────────
         # NOTIFY carries only a slim envelope (pg_notify payloads are capped at
@@ -109,29 +129,25 @@ async def _event_generator(
 
                 db = SessionLocal()
                 try:
-                    new_events = campaign_repo.get_events(
-                        db, campaign_id, after_seq=last_seq
-                    )
+                    new_events = get_events(db, entity_id, after_seq=last_seq)
                 finally:
                     db.close()
 
                 for event in new_events:
                     last_seq = event["seq"]
                     yield _format_sse(event)
-                    if event["event_type"] in _TERMINAL_EVENTS:
-                        logger.debug(
-                            "Terminal event via LISTEN for campaign_id=%s", campaign_id
-                        )
+                    if event["event_type"] in terminal_events:
+                        logger.debug("Terminal event via LISTEN channel=%s", channel)
                         return
 
     except GeneratorExit:
-        logger.debug("Client disconnected from campaign_id=%s stream", campaign_id)
+        logger.debug("Client disconnected from channel=%s stream", channel)
     finally:
         if conn is not None:
             conn.close()
 
 
-# ── Route ─────────────────────────────────────────────────────────────────────
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.get(
     "/campaigns/{campaign_id}",
@@ -159,11 +175,59 @@ async def stream_campaign(
     )
 
     return StreamingResponse(
-        _event_generator(str(campaign_id), after_seq),
+        _event_generator(
+            entity_id=str(campaign_id),
+            channel=f"campaign_{campaign_id}",
+            after_seq=after_seq,
+            get_events=campaign_repo.get_events,
+            terminal_events=_CAMPAIGN_TERMINAL_EVENTS,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "X-Accel-Buffering": "no",  # prevent nginx from buffering SSE frames
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@router.get(
+    "/businesses/{business_id}",
+    summary="Live SSE stream for URL-based business onboarding (same mechanics as /campaigns/{id})",
+    response_class=StreamingResponse,
+)
+async def stream_business(
+    business_id: uuid.UUID,
+    after_seq: int = Query(
+        default=0,
+        ge=0,
+        description="Replay events with seq > this value before going live. "
+                    "Pass the last seq you received to reconnect without losing events.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user_from_query),
+):
+    row = business_repo.get_by_id(db, business_id, current_user["id"])
+    if not row:
+        raise NotFoundError(f"Business {business_id} not found")
+
+    logger.info(
+        "SSE connection opened business_id=%s user_id=%s after_seq=%s",
+        business_id, current_user["id"], after_seq,
+    )
+
+    return StreamingResponse(
+        _event_generator(
+            entity_id=str(business_id),
+            channel=f"business_{business_id}",
+            after_seq=after_seq,
+            get_events=business_repo.get_events,
+            terminal_events=_BUSINESS_TERMINAL_EVENTS,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
             "Connection": "keep-alive",
         },
     )

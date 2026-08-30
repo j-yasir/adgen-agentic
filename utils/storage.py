@@ -55,16 +55,22 @@ def _validate_image_bytes(data: bytes) -> str:
     return ext
 
 
+def asset_output_path(campaign_id: str, asset_id: str, asset_type: str) -> str:
+    """Path convention for a producer-generated file, without writing it —
+    the caller (e.g. a MediaGen provider) writes the actual bytes there."""
+    ext = _EXT.get(asset_type, "bin")
+    folder = GENERATIONS_DIR / campaign_id / asset_type
+    folder.mkdir(parents=True, exist_ok=True)
+    return str(folder / f"{asset_id}.{ext}")
+
+
 def save_asset(
     campaign_id: str,
     asset_id: str,
     asset_type: str,
     data: bytes | str,
 ) -> str:
-    ext = _EXT.get(asset_type, "bin")
-    folder = GENERATIONS_DIR / campaign_id / asset_type
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{asset_id}.{ext}"
+    path = Path(asset_output_path(campaign_id, asset_id, asset_type))
     if isinstance(data, str):
         path.write_text(data, encoding="utf-8")
     else:

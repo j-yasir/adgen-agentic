@@ -106,3 +106,76 @@ def delete(
     ).scalar()
     db.commit()
     return bool(result)
+
+
+def finalize(
+    db: Session,
+    *,
+    business_id: uuid.UUID | str,
+    user_id: uuid.UUID | str,
+    name: str,
+    website: Optional[str],
+    industry: Optional[str],
+    bko: dict,
+) -> Optional[dict]:
+    """URL-onboarding only — refreshes name/website/industry alongside bko and
+    flips onboarding_status to 'complete'. See sp_finalize_business.sql for
+    why this is a separate proc from update_bko()."""
+    logger.debug("Finalizing business_id=%s from URL research", business_id)
+    row = db.execute(
+        text(
+            "SELECT * FROM sp_finalize_business("
+            ":business_id, :user_id, :name, :website, :industry, CAST(:bko AS JSONB)"
+            ")"
+        ),
+        {
+            "business_id": str(business_id),
+            "user_id":     str(user_id),
+            "name":        name,
+            "website":     website,
+            "industry":    industry,
+            "bko":         json.dumps(bko),
+        },
+    ).mappings().first()
+    db.commit()
+    return dict(row) if row else None
+
+
+# ── Business events (URL-onboarding progress — mirrors campaign_repo's
+# insert_event/get_events exactly, same slim-envelope SSE pattern) ───────────
+
+def insert_event(
+    db: Session,
+    *,
+    business_id: uuid.UUID | str,
+    event_type: str,
+    agent: Optional[str],
+    payload: dict,
+) -> dict:
+    row = db.execute(
+        text(
+            "SELECT * FROM sp_insert_business_event("
+            ":business_id, :event_type, :agent, CAST(:payload AS JSONB)"
+            ")"
+        ),
+        {
+            "business_id": str(business_id),
+            "event_type":  event_type,
+            "agent":       agent,
+            "payload":     json.dumps(payload),
+        },
+    ).mappings().first()
+    db.commit()
+    return dict(row)
+
+
+def get_events(
+    db: Session,
+    business_id: uuid.UUID | str,
+    after_seq: int = 0,
+) -> list[dict]:
+    rows = db.execute(
+        text("SELECT * FROM sp_get_business_events(:business_id, :after_seq)"),
+        {"business_id": str(business_id), "after_seq": after_seq},
+    ).mappings().all()
+    return [dict(r) for r in rows]

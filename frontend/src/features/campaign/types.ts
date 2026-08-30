@@ -57,6 +57,13 @@ export type CampaignEvent = {
   created_at: string;
 };
 
+export type EmailAssetMetadata = {
+  subject_line?: string;
+  preview_text?: string;
+  sender_name?: string;
+  template_used?: string;
+};
+
 export type AssetResponse = {
   id: string;
   campaign_id: string;
@@ -66,6 +73,7 @@ export type AssetResponse = {
   storage_url: string;
   prompt_used: string | null;
   status: string;
+  metadata: EmailAssetMetadata & Record<string, unknown>;
   created_at: string;
 };
 

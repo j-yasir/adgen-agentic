@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 
 AssetType = Literal["static_image", "video_ad", "email"]
 Platform = Literal["instagram", "facebook", "tiktok", "youtube", "google", "linkedin", "email"]
-AssetFormat = Literal["9:16", "4:5", "1:1", "16:9", "email"]
+AssetFormat = Literal["9:16", "4:5", "1:1", "16:9", "email", "search_ad", "responsive", "banner"]
 FunnelStage = Literal["tofu", "mofu", "bofu"]
 CampaignRole = Literal["attention", "consideration", "conversion"]
 

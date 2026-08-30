@@ -4,7 +4,24 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+class CreateProductFromUrlRequest(BaseModel):
+    """Kick off URL-based product onboarding — a research agent (web_search
+    only) fills in the product profile, and a separate deterministic step
+    (utils/product_image_finder.py — no LLM) tries to find and attach a real
+    product photo. Synchronous: unlike business onboarding, one product is
+    small enough to complete within a normal request/response cycle."""
+    url: str = Field(..., description="A product page URL, or a business/category page — the agent identifies the featured product")
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("url must start with http:// or https://")
+        return v
 
 
 class CreateProductRequest(BaseModel):

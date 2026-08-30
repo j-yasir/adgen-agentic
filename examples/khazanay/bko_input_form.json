@@ -1,0 +1,205 @@
+{
+  "onboarding_path": "form",
+  "company": {
+    "name": "Khazanay",
+    "website": "https://www.khazanay.pk",
+    "industry": "Footwear & Fashion Retail",
+    "sub_industry": "Pre-owned / Resale Footwear (Reverse Logistics)",
+    "business_type": "D2C",
+    "company_size": "smb",
+    "employee_range": "11-50",
+    "founded_year": null,
+    "headquarters": "Plot 6C, Zamzama Commercial, DHA Phase-V, Karachi, Pakistan",
+    "tagline": "Pakistan's Pre-Loved Shoe Store",
+    "description": "Khazanay is Pakistan's pre-loved footwear marketplace, selling 100% authentic, personally-inspected used shoes from top international brands like Nike, Adidas, Asics, and New Balance — imported from the USA and sold at up to 80% off retail, with transparent condition grading and a 7-day return policy.",
+    "mission": "Make authentic, name-brand footwear affordable and accessible to budget-conscious shoppers across Pakistan, while giving quality shoes a second life.",
+    "brand_story": "Khazanay sources genuine, gently-used shoes from top athletic and lifestyle brands abroad, personally inspects every pair for authenticity and condition, and grades them transparently (Premium+, Premium, Excellent, Very Good) before listing them online — letting Pakistani shoppers buy real Nike, Adidas, and Asics at a fraction of retail price, backed by a 7-day return window."
+  },
+  "product": {
+    "name": "Nike Quest 4",
+    "product_type": "physical",
+    "description": "Pre-loved Nike Quest 4 running shoe, EUR 38.5 / UK 5 / USA 7.5, graded 'Excellent' condition (very little signs of wear). 100% authentic, personally inspected, imported from the USA.",
+    "key_features": [
+      "100% authentic — personally inspected before listing",
+      "Condition-graded: Excellent (very little signs of wear)",
+      "Imported directly from the USA",
+      "Unedited product photos show the shoe's actual condition",
+      "7-day return/exchange window for size issues"
+    ],
+    "key_benefits": [
+      "Genuine Nike running shoe at a fraction of retail price",
+      "Verified authenticity — no risk of counterfeits",
+      "Immediate availability, no import wait",
+      "A more sustainable choice than buying new"
+    ],
+    "unique_selling_points": [
+      "Every pair personally inspected for authenticity before listing",
+      "Transparent condition grading system, not just 'used'",
+      "Imported inventory unavailable new in local retail"
+    ],
+    "pricing_model": "one_time",
+    "pricing_tier": "low",
+    "pricing_details": "PKR 7,099 (compare at PKR 9,465) — price varies by size and condition grade",
+    "target_use_case": "Everyday running and casual wear",
+    "primary_cta": "Shop Now",
+    "conversion_url": "https://www.khazanay.pk/products/nike-quest-4-s-843817",
+    "free_trial_available": false,
+    "demo_available": false
+  },
+  "audience": {
+    "age_range": "18-35",
+    "occupation": ["Student", "Young professional", "Fitness enthusiast"],
+    "company_size_target": null,
+    "industry_vertical": null,
+    "seniority": null,
+    "geography": "Karachi and Lahore primarily, nationwide shipping across Pakistan",
+    "language": "English and Urdu",
+    "values": [
+      "Value for money without sacrificing quality",
+      "Authenticity — real brands, not counterfeits",
+      "Practicality and smart shopping",
+      "Sustainability through reuse"
+    ],
+    "interests": [
+      "Sneaker culture and name-brand fashion",
+      "Running and fitness",
+      "Online deal-hunting and discount shopping",
+      "Sports and athleisure"
+    ],
+    "personality_traits": [
+      "Budget-conscious",
+      "Brand-aware",
+      "Practical",
+      "Deal-savvy"
+    ],
+    "lifestyle": "Urban, active, price-sensitive but unwilling to compromise on brand authenticity",
+    "online_platforms": ["Instagram", "Facebook", "TikTok", "WhatsApp"],
+    "content_consumption": ["Sneaker unboxings", "Deal/discount content", "Fitness and running content", "Before/after price comparisons"],
+    "purchase_behavior": "Browses by brand and size, compares condition grade against price, checks return policy before buying, often discovers via social ads or search for a specific brand at a discount",
+    "device_usage": "Mobile-first — majority of browsing and buying via smartphone",
+    "buying_trigger": "Seeing a favorite brand (Nike, Adidas, Asics) available in their size at a steep discount, or a limited-time sale",
+    "pain_points": [
+      "Name-brand shoes are expensive at full retail in Pakistan",
+      "Worried about counterfeits when buying 'cheap' branded shoes online",
+      "Limited size availability for imported brands locally"
+    ],
+    "desired_outcomes": [
+      "Own genuine Nike/Adidas/Asics without paying full retail price",
+      "Feel confident the shoes are authentic and accurately described",
+      "Find their exact size in a brand not easily available new in Pakistan"
+    ],
+    "objections": [
+      "Is a 'used' shoe really worth buying — how used is it, really?",
+      "What if the condition doesn't match what's described?",
+      "Is this actually authentic, or a counterfeit sold as 'preloved'?"
+    ],
+    "emotional_state": "Excited by the idea of an authentic brand-name deal, but cautious/skeptical about buying used footwear online until reassured",
+    "audience_awareness_level": "solution_aware",
+    "persona_name": "Deal-Savvy Sneaker Shopper Bilal"
+  },
+  "brand": {
+    "personality_traits": ["Trustworthy", "Value-driven", "Authentic", "Practical", "Straightforward"],
+    "primary_tone": "casual",
+    "writing_style": "punchy",
+    "pov": "second_person",
+    "language_complexity": "simple",
+    "humor_level": "light",
+    "voice_examples": [
+      "Real Nike. Real Asics. Up to 80% off retail.",
+      "Personally inspected. Honestly graded. No surprises.",
+      "Your size, your brand, a fraction of the price."
+    ],
+    "dos": [
+      "Lead with the brand name and the discount — that's the hook",
+      "Be explicit about condition grading, never hide that items are pre-owned",
+      "Use real, unedited product photography — authenticity is the whole pitch",
+      "Create urgency around size/stock scarcity (only one pair per size exists)"
+    ],
+    "donts": [
+      "Never imply the shoes are brand new",
+      "Do not overuse discount/sale language to the point it feels untrustworthy",
+      "Avoid glossy, overly-retouched stock photography — it undercuts the 'real condition' promise",
+      "Never guarantee availability of a specific size — inventory is one-of-a-kind per pair"
+    ],
+    "primary_colors": ["#000000"],
+    "secondary_colors": ["#FFFFFF", "#F5F5F5"],
+    "font_style": "modern_sans",
+    "imagery_style": "clean, real, unedited product photography that shows the shoe's actual condition — no artificial gloss",
+    "design_aesthetic": "clean_minimal",
+    "visual_do": "Show the real product clearly and honestly, clean neutral backgrounds, condition grade visible",
+    "visual_dont": "No overly retouched or stock photography — it undermines the 'real condition, real price' promise"
+  },
+  "competitive": {
+    "market_position": "challenger",
+    "positioning_statement": "The same authentic global brands sold in official retail stores — at up to 80% off, with transparent condition grading and a return policy for peace of mind",
+    "primary_differentiators": [
+      "Personally inspected, condition-graded inventory (not just 'used')",
+      "Imported selection of sizes/models not always available new in Pakistan",
+      "7-day return window most resale sellers don't offer"
+    ],
+    "competitors": [
+      {
+        "name": "Official brand retail stores (Nike/Adidas outlets in Pakistan)",
+        "strengths": ["Brand new condition", "Manufacturer warranty", "In-store try-on"],
+        "weaknesses": ["Full retail pricing", "Limited size/model availability locally"],
+        "pricing_vs_us": "pricier",
+        "our_differentiator": "Same authentic brands at up to 80% off, with honest condition grading instead of a full-price-only option."
+      },
+      {
+        "name": "Unverified resale sellers (Facebook Marketplace, OLX)",
+        "strengths": ["Sometimes cheaper", "Direct negotiation"],
+        "weaknesses": ["No authenticity guarantee", "No standardized condition grading", "No return policy"],
+        "pricing_vs_us": "similar",
+        "our_differentiator": "Personally inspected authenticity and a 7-day return window — not a gamble on a stranger's listing."
+      }
+    ],
+    "competitive_advantages_summary": "Khazanay is positioned between full-price official retail and risky peer-to-peer resale — authentic, graded, and returnable, at resale prices."
+  },
+  "social_proof": {
+    "key_stats": [],
+    "testimonials": [],
+    "guarantees": [
+      "100% authenticity — every pair personally inspected before listing",
+      "7-day return/exchange window for size issues"
+    ],
+    "awards": [],
+    "notable_clients": []
+  },
+  "marketing": {
+    "active_platforms": ["Instagram", "Facebook", "TikTok", "LinkedIn", "YouTube"],
+    "target_platforms_for_campaigns": ["Instagram", "Facebook", "TikTok"],
+    "preferred_cta_styles": [
+      "Shop Now",
+      "Grab Your Size Before It's Gone",
+      "Up to 80% Off — Shop the Sale"
+    ],
+    "ad_style_preference": "minimalist",
+    "primary_conversion_goal": "purchase",
+    "budget_tier": "medium",
+    "average_sales_cycle": "Impulse to same-session — shoppers browse by brand/size and buy quickly once they find their size at the right price",
+    "best_performing_content_types": [
+      "Before/after price comparison (retail vs Khazanay price)",
+      "Close-up condition/authenticity shots",
+      "Brand-specific promos (e.g. 'Nike Week')"
+    ],
+    "emotional_hooks": ["Value/savings", "FOMO on one-of-a-kind sizes", "Confidence in authenticity", "Smart-shopper pride"],
+    "value_propositions": [
+      "Real Nike, Adidas, and Asics — up to 80% off retail",
+      "Every pair personally inspected and honestly condition-graded",
+      "One-of-a-kind inventory — once a size sells, it's gone"
+    ]
+  },
+  "compliance": {
+    "industry_regulations": [],
+    "restricted_claims": [
+      "Cannot describe items as 'brand new' — all inventory is pre-owned/used",
+      "Condition grade stated in ads must match the item's actual listed grade"
+    ],
+    "required_disclaimers": [
+      "Items are pre-owned/used — condition grading applies, not brand new",
+      "7-day return window applies to size/fit issues"
+    ],
+    "forbidden_topics": [],
+    "certifications_to_mention": ["100% authenticity guaranteed — personally inspected"]
+  }
+}

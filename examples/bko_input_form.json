@@ -16,15 +16,14 @@
     "brand_story": "Founded by Zara Baig after she realised the apricots her family had grown in Hunza for generations tasted nothing like anything sold in Karachi supermarkets. She started making small batches in her home kitchen, and when a single Instagram post went viral, she turned it into a business — keeping every jar hand-labelled and every fruit locally sourced."
   },
   "product": {
-    "name": "GB Mountain Fruit Preserves",
+    "name": "Hunza Apricot Jam",
     "product_type": "physical",
-    "description": "Small-batch fruit jams made from wild apricots, Hunza cherries, mulberries, and sea-buckthorn sourced directly from GB orchards at 2,500m altitude. Each 250g jar is cooked in small batches, hand-labelled, and shipped within 48 hours.",
+    "description": "Small-batch jam made from wild Hunza apricots sourced directly from GB orchards at 2,500m altitude. Each 250g jar is cooked in small batches, hand-labelled, and shipped within 48 hours.",
     "key_features": [
       "100% natural — zero preservatives, zero artificial colour",
-      "High-altitude fruit harvested at peak ripeness",
+      "High-altitude wild apricots harvested at peak ripeness",
       "Small-batch production — max 200 jars per batch",
-      "Hand-labelled glass jars, gift-ready packaging",
-      "4 flavours: Wild Apricot, Hunza Cherry, Mulberry, Sea-Buckthorn"
+      "Hand-labelled glass jars, gift-ready packaging"
     ],
     "key_benefits": [
       "Tastes like fruit, not sugar — distinct mountain flavour you cannot find in a supermarket",
@@ -35,7 +34,7 @@
     "unique_selling_points": [
       "The only Pakistani jam brand sourcing exclusively from Gilgit-Baltistan high-altitude orchards",
       "Wild apricot variety unavailable anywhere outside GB",
-      "Every batch is traceable to a named farm in Hunza or Ghizer"
+      "Every batch is traceable to a named farm in Hunza"
     ],
     "pricing_model": "one_time",
     "pricing_tier": "mid",

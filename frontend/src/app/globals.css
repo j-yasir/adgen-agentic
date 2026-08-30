@@ -126,6 +126,54 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ── Campaign composer aurora glow ─────────────────────────── */
+@property --glow-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+@keyframes glow-spin {
+  to { --glow-angle: 360deg; }
+}
+@keyframes composer-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes agent-pulse-ring {
+  0%   { opacity: 0.6; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.22); }
+}
+@keyframes float-blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(24px, -16px) scale(1.04); }
+  66%       { transform: translate(-16px, 24px) scale(0.96); }
+}
+
+.composer-glow-ring {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  background: conic-gradient(
+    from var(--glow-angle),
+    #5b4ee8 0%, #9333ea 30%, #ec4899 55%, #5b4ee8 100%
+  );
+  opacity: 0;
+  transition: opacity 0.35s ease;
+  z-index: 0;
+  pointer-events: none;
+}
+.composer-focused .composer-glow-ring {
+  opacity: 0.55;
+  animation: glow-spin 3.5s linear infinite;
+}
+.composer-glow-ring::after {
+  content: '';
+  position: absolute;
+  inset: 1.5px;
+  border-radius: calc(inherit - 1px);
+  background: #0d1026;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

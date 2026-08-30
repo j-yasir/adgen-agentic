@@ -62,13 +62,65 @@ def _emit(db, campaign_id: str, event_type: str, agent: str | None, payload: dic
     )
 
 
-async def _run_agent_streaming(agent, input: dict, campaign_id: str, agent_name: str) -> dict:
-    """Run an agent via astream_events and emit granular SSE events for each step.
+def _human_tool_message(tool_name: str, tool_input: dict | str, is_start: bool) -> str:
+    """Convert a raw tool call/result into a user-facing message."""
+    q = ""
+    if isinstance(tool_input, dict):
+        q = str(tool_input.get("query") or tool_input.get("url") or tool_input.get("objective") or "")
+    elif isinstance(tool_input, str):
+        q = tool_input
 
-    Yields tool_call and tool_result events in real-time so the frontend
-    can show exactly what the agent is doing as it works.
-    Returns the final result dict (same as ainvoke would return).
-    """
+    q = q.strip()[:80]
+
+    if is_start:
+        friendly = {
+            "web_search":              f"Searching the web{': ' + q if q else ''}…",
+            "scrape_url":              f"Reading page{': ' + q if q else ''}…",
+            "retrieve_past_campaigns": "Checking past campaign performance…",
+            "deep_competitor_analysis":"Analysing competitors…",
+            "research_platform_trends":"Checking platform trends…",
+            "generate_image":          "Generating image…",
+            "generate_email_template": "Building email template…",
+            # Strategist copy skills
+            "write_static_ad":         f"Writing image ad copy{' for ' + q if q else ''}…",
+            "write_video_script":      f"Writing video script{' for ' + q if q else ''}…",
+            "write_email":             f"Writing email copy{' for ' + q if q else ''}…",
+            # Producer skills
+            "plan_image":              f"Planning visual composition{' — ' + q if q else ''}…",
+            "plan_email_layout":       "Deciding email layout and structure…",
+            "plan_email_hero_image":   "Planning email hero image…",
+            "generate_static_image":   f"Generating image{' — ' + q if q else ''}…",
+            "generate_email_hero":     "Generating email hero image…",
+            "render_email":            "Rendering final email template…",
+            # Auditor
+            "audit_asset":             f"Scoring asset{' — ' + q if q else ''}…",
+        }
+    else:
+        friendly = {
+            "web_search":              "Search complete — analysing findings…",
+            "scrape_url":              "Page read — extracting insights…",
+            "retrieve_past_campaigns": "Past campaigns loaded…",
+            "deep_competitor_analysis":"Competitor analysis done…",
+            "research_platform_trends":"Platform trends captured…",
+            "generate_image":          "Image generated…",
+            "generate_email_template": "Email template ready…",
+            "write_static_ad":         "Image ad copy written ✓",
+            "write_video_script":      "Video script written ✓",
+            "write_email":             "Email copy written ✓",
+            "plan_image":              "Visual plan ready — sending to image generator…",
+            "plan_email_layout":       "Email layout decided…",
+            "plan_email_hero_image":   "Hero image plan ready…",
+            "generate_static_image":   "Image generated and saved ✓",
+            "generate_email_hero":     "Email hero image ready ✓",
+            "render_email":            "Email template rendered ✓",
+            "audit_asset":             "Asset scored ✓",
+        }
+
+    return friendly.get(tool_name, f"{'Running' if is_start else 'Finished'}: {tool_name.replace('_', ' ')}")
+
+
+async def _run_agent_streaming(agent, input: dict, campaign_id: str, agent_name: str) -> dict:
+    """Run an agent via astream_events and emit granular SSE events for each step."""
     db = _db()
     final_result = None
     try:
@@ -76,17 +128,21 @@ async def _run_agent_streaming(agent, input: dict, campaign_id: str, agent_name:
             kind = event["event"]
 
             if kind == "on_tool_start":
+                tool_name  = event.get("name", "")
                 tool_input = event.get("data", {}).get("input", {})
                 _emit(db, campaign_id, "tool_call", agent_name, {
-                    "tool": event["name"],
-                    "input": str(tool_input)[:500],
+                    "tool":    tool_name,
+                    "input":   str(tool_input)[:500],
+                    "message": _human_tool_message(tool_name, tool_input, is_start=True),
                 })
 
             elif kind == "on_tool_end":
+                tool_name   = event.get("name", "")
                 tool_output = event.get("data", {}).get("output", "")
                 _emit(db, campaign_id, "tool_result", agent_name, {
-                    "tool": event["name"],
+                    "tool":           tool_name,
                     "result_summary": str(tool_output)[:500],
+                    "message":        _human_tool_message(tool_name, {}, is_start=False),
                 })
 
             elif kind == "on_chain_end" and event.get("name") == agent_name:
@@ -294,6 +350,12 @@ async def run_strategist(state: CampaignState) -> dict:
         })
 
         def emit_event(event_type: str, payload: dict) -> None:
+            # Add human-readable message when the strategist pipeline doesn't supply one
+            if event_type in ("tool_call", "tool_result") and "message" not in payload:
+                tool_name = payload.get("tool", "")
+                platform = payload.get("platform", "")
+                q = platform or payload.get("asset_id", "")
+                payload = {**payload, "message": _human_tool_message(tool_name, q, event_type == "tool_call")}
             _emit(db, state["campaign_id"], event_type, "strategist", payload)
 
         strategy_doc = await strategist_pipeline.ainvoke(dict(state), on_event=emit_event)
@@ -368,7 +430,14 @@ async def run_producer(state: CampaignState) -> dict:
         _emit(db, state["campaign_id"], "agent_started", "producer",
               {"message": "Producer agent starting", "retry": state.get("retry_count", 0)})
 
-        result = await producer_agent.ainvoke(dict(state))
+        def emit_producer_event(event_type: str, payload: dict) -> None:
+            if event_type in ("tool_call", "tool_result") and "message" not in payload:
+                tool_name = payload.get("tool", "")
+                q = payload.get("platform", "") or payload.get("asset_type", "")
+                payload = {**payload, "message": _human_tool_message(tool_name, q, event_type == "tool_call")}
+            _emit(db, state["campaign_id"], event_type, "producer", payload)
+
+        result = await producer_agent.ainvoke(dict(state), on_event=emit_producer_event)
         assets: list[dict] = _extract_json(result, "generated_assets") or result.get("generated_assets", [])
 
         # Persist each asset to the DB
@@ -378,9 +447,11 @@ async def run_producer(state: CampaignState) -> dict:
                 campaign_id=state["campaign_id"],
                 platform=asset.get("platform", "unknown"),
                 format=asset.get("format", "unknown"),
-                asset_type="ad_copy",
+                asset_type=asset.get("asset_type", "image"),
                 storage_url=asset.get("storage_url") or "",
-                prompt_used=asset.get("visual_description"),
+                prompt_used=asset.get("prompt_used"),
+                metadata=asset.get("metadata"),
+                status=asset.get("status", "stored"),
             )
             asset["asset_id"] = str(record["id"])
 
@@ -389,7 +460,17 @@ async def run_producer(state: CampaignState) -> dict:
 
         save_generation(state["campaign_id"], "generated_assets.json", {"assets": assets})
 
-        return {"generated_assets": assets, "audit_results": [], "assets_approved": [], "assets_rejected": []}
+        # Clear hitl_response: the plan approval that routed here has now been
+        # consumed. Left uncleared, hitl_asset_review's own "is this a fresh
+        # visit or a resume replay" guard (`if not state.get("hitl_response")`)
+        # would see this stale truthy value and skip flipping the campaign to
+        # awaiting_review / emitting hitl_required — the campaign would look
+        # stuck at "running" forever even though the graph is correctly
+        # paused inside hitl_asset_review's own interrupt() call.
+        return {
+            "generated_assets": assets, "audit_results": [], "assets_approved": [], "assets_rejected": [],
+            "hitl_response": None,
+        }
     except Exception as exc:
         logger.exception("Producer agent failed campaign_id=%s", state["campaign_id"])
         _emit(db, state["campaign_id"], "agent_error", "producer", {"error": str(exc)})
@@ -406,15 +487,22 @@ async def run_auditor(state: CampaignState) -> dict:
         _emit(db, state["campaign_id"], "agent_started", "auditor",
               {"message": "Auditor agent starting"})
 
-        result = await auditor_agent.ainvoke(dict(state))
+        def emit_auditor_event(event_type: str, payload: dict) -> None:
+            if event_type in ("tool_call", "tool_result") and "message" not in payload:
+                tool_name = payload.get("tool", "")
+                q = payload.get("platform", "") or payload.get("asset_id", "")
+                payload = {**payload, "message": _human_tool_message(tool_name, q, event_type == "tool_call")}
+            _emit(db, state["campaign_id"], event_type, "auditor", payload)
+
+        result = await auditor_agent.ainvoke(dict(state), on_event=emit_auditor_event)
 
         audit_results: list[dict] = result.get("audit_results", [])
         assets_approved: list[str] = result.get("assets_approved", [])
         assets_rejected: list[str] = result.get("assets_rejected", [])
 
-        # Compute campaign-level audit score (average of all weighted_avg values)
+        # Compute campaign-level audit score — weighted_avg is 0-10, audit_score is 0-100
         scores = [r["weighted_avg"] for r in audit_results if "weighted_avg" in r]
-        audit_score = round(sum(scores) / len(scores), 2) if scores else None
+        audit_score = round(sum(scores) / len(scores) * 10, 1) if scores else None
 
         retry_count = state.get("retry_count", 0) + (1 if assets_rejected else 0)
 
@@ -492,7 +580,7 @@ async def campaign_done(state: CampaignState) -> dict:
     db = _db()
     try:
         campaign_repo.update_status(
-            db, campaign_id=state["campaign_id"], status="completed",
+            db, campaign_id=state["campaign_id"], status="done",
         )
         _emit(db, state["campaign_id"], "campaign_done", "orchestrator", {
             "message": "Campaign pipeline completed successfully",

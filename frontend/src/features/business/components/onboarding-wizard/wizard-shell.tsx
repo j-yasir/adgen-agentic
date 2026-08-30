@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { useCreateBusiness } from "../../hooks/use-businesses";
+import { useCreateBusiness, useCreateBusinessFromUrl, useBusinessDetail } from "../../hooks/use-businesses";
+import { useBusinessOnboardingStream } from "../../hooks/use-business-onboarding-stream";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { StepCompany } from "./step-company";
@@ -14,8 +15,9 @@ import { StepSocialProof } from "./step-social-proof";
 import { StepMarketing } from "./step-marketing";
 import { StepReview } from "./step-review";
 import type { CreateBusinessRequest } from "../../types";
-import { ChevronLeft, ChevronRight, Loader2, Send, Link2, ClipboardList, ArrowRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Send, Link2, ClipboardList, ArrowRight, CheckCircle2, AlertCircle } from "lucide-react";
 import { cn } from "@/shared/lib/utils";
+import { ActivityFeed } from "@/features/campaign/components/activity-feed";
 
 const STEPS = [
   { label: "Company", short: "Co", component: StepCompany },
@@ -112,7 +114,7 @@ const EMPTY_FORM: CreateBusinessRequest = {
 export type WizardFormData = CreateBusinessRequest;
 type OnboardingMode = "choose" | "url" | "form";
 
-/* ── URL import path ────────────────────────────────────────────────── */
+/* ── URL import path — real research, streamed live ───────────────────── */
 function UrlImportPath({
   onStartManual,
   onClose,
@@ -121,132 +123,151 @@ function UrlImportPath({
   onClose: () => void;
 }) {
   const [url, setUrl] = useState("");
-  const [state, setState] = useState<"idle" | "analyzing" | "done">("idle");
-  const [businessName, setBusinessName] = useState("");
-  const createBusiness = useCreateBusiness();
+  const [businessId, setBusinessId] = useState<string | null>(null);
+  const createFromUrl = useCreateBusinessFromUrl();
   const router = useRouter();
 
-  const steps = ["Reading site content", "Extracting company profile", "Analysing audience signals", "Building BKO"];
-  const [stepIdx, setStepIdx] = useState(0);
+  const { events, status, error } = useBusinessOnboardingStream(businessId);
+
+  // Only fetch the finalized business once onboarding actually finished —
+  // fetching earlier would just return the pending placeholder.
+  const { data: business } = useBusinessDetail(status === "ready" ? businessId ?? "" : "");
+
+  const phase: "idle" | "streaming" | "ready" | "failed" =
+    !businessId ? "idle" : status === "ready" ? "ready" : status === "failed" ? "failed" : "streaming";
+
+  const headerText = useMemo(() => {
+    const lastAgentStarted = [...events].reverse().find((e) => e.event_type === "agent_started");
+    if (lastAgentStarted?.agent === "system") return "Building your business profile…";
+    return `Researching ${url || "your site"}…`;
+  }, [events, url]);
 
   async function handleAnalyze() {
     if (!url.trim()) return;
-    setState("analyzing");
-    // Simulate extraction steps
-    for (let i = 0; i < steps.length; i++) {
-      setStepIdx(i);
-      await new Promise((r) => setTimeout(r, 800));
+    try {
+      const result = await createFromUrl.mutateAsync({ url });
+      setBusinessId(result.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start research");
     }
-    setState("done");
   }
 
-  async function handleConfirm() {
-    if (!businessName.trim()) return;
-    try {
-      const result = await createBusiness.mutateAsync({
-        ...EMPTY_FORM,
-        onboarding_path: "url",
-        company: { ...EMPTY_FORM.company, name: businessName, website: url },
-      });
-      toast.success("Business created! Fill in more details to improve your BKO.");
-      onClose();
-      router.push(`/businesses/${result.id}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create business");
-    }
+  function handleRetry() {
+    setBusinessId(null);
   }
+
+  function handleViewBusiness() {
+    if (!businessId) return;
+    onClose();
+    router.push(`/businesses/${businessId}`);
+  }
+
+  const completeness = business?.bko?.meta && typeof business.bko.meta === "object"
+    ? (business.bko.meta as Record<string, unknown>).completeness_score
+    : undefined;
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500 mb-1">URL Import</p>
-        <h3 className="text-lg font-bold text-slate-900">Paste your website URL</h3>
-        <p className="text-sm text-slate-500 mt-1">
-          AI will extract your business profile and build an initial BKO.
-        </p>
-      </div>
-
-      {state === "idle" && (
-        <div className="space-y-4">
-          <div className="flex gap-2">
-            <div className="flex-1 flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
-              <Link2 className="h-4 w-4 text-slate-400 shrink-0" />
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://yourwebsite.com"
-                className="flex-1 text-sm text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
-                onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
-              />
+      {phase === "idle" && (
+        <>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500 mb-1">URL Import</p>
+            <h3 className="text-lg font-bold text-slate-900">Paste your website URL</h3>
+            <p className="text-sm text-slate-500 mt-1">
+              An AI agent will research your site (and the web around it) and build an initial BKO.
+            </p>
+          </div>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <div className="flex-1 flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-2.5 focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
+                <Link2 className="h-4 w-4 text-slate-400 shrink-0" />
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://yourwebsite.com"
+                  className="flex-1 text-sm text-slate-800 placeholder:text-slate-400 outline-none bg-transparent"
+                  onKeyDown={(e) => e.key === "Enter" && handleAnalyze()}
+                />
+              </div>
+              <button
+                onClick={handleAnalyze}
+                disabled={!url.trim() || createFromUrl.isPending}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+                style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)" }}
+              >
+                {createFromUrl.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <>Analyze <ArrowRight className="h-4 w-4" /></>}
+              </button>
             </div>
+            <p className="text-xs text-slate-400 text-center">— or —</p>
             <button
-              onClick={handleAnalyze}
-              disabled={!url.trim()}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
-              style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)" }}
+              onClick={() => onStartManual(url)}
+              className="w-full text-sm text-slate-500 hover:text-indigo-600 transition-colors font-medium py-1"
             >
-              Analyze
-              <ArrowRight className="h-4 w-4" />
+              Fill in details manually →
             </button>
           </div>
-          <p className="text-xs text-slate-400 text-center">— or —</p>
+        </>
+      )}
+
+      {phase === "streaming" && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
+            <span className="text-sm font-semibold text-indigo-700">{headerText}</span>
+          </div>
+          <div className="h-72 rounded-xl border border-slate-200 bg-slate-50/50 overflow-hidden">
+            <ActivityFeed events={events} />
+          </div>
+        </div>
+      )}
+
+      {phase === "ready" && (
+        <div className="space-y-4">
+          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+              <p className="text-sm font-semibold text-emerald-700">Business profile ready</p>
+            </div>
+            <div className="text-sm text-slate-700 pl-6">
+              <p className="font-semibold">{business?.name}</p>
+              {business?.industry && <p className="text-slate-500">{business.industry}</p>}
+              {typeof completeness === "number" && (
+                <p className="text-xs text-slate-400 mt-1">
+                  {Math.round(completeness * 100)}% complete — review and fill in any gaps after opening it
+                </p>
+              )}
+            </div>
+          </div>
           <button
-            onClick={() => onStartManual(url)}
-            className="w-full text-sm text-slate-500 hover:text-indigo-600 transition-colors font-medium py-1"
+            onClick={handleViewBusiness}
+            className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}
           >
-            Fill in details manually →
+            View &amp; Edit Business <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       )}
 
-      {state === "analyzing" && (
-        <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <Loader2 className="h-4 w-4 text-indigo-500 animate-spin" />
-            <span className="text-sm font-semibold text-indigo-700">Extracting business intelligence…</span>
-          </div>
-          <div className="space-y-1.5">
-            {steps.map((s, i) => (
-              <div key={s} className={cn("flex items-center gap-2 text-sm transition-all", i <= stepIdx ? "text-indigo-600" : "text-indigo-300")}>
-                <span className="text-xs">{i < stepIdx ? "✓" : i === stepIdx ? "⋯" : "○"}</span>
-                {s}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {state === "done" && (
+      {phase === "failed" && (
         <div className="space-y-4">
-          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-            <p className="text-sm font-semibold text-emerald-700 mb-3">✓ Profile extracted — confirm before saving</p>
-            <div>
-              <label className="text-xs font-semibold text-slate-600 block mb-1">Business name</label>
-              <input
-                type="text"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="Enter your business name"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 transition-all"
-              />
-            </div>
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            <p className="text-sm text-red-700">{error || "Something went wrong during research."}</p>
           </div>
           <div className="flex gap-3">
             <button
-              onClick={handleConfirm}
-              disabled={!businessName.trim() || createBusiness.isPending}
-              className="flex-1 inline-flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 transition-opacity"
-              style={{ background: "linear-gradient(135deg,#22c55e,#16a34a)" }}
+              onClick={handleRetry}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-90"
+              style={{ background: "linear-gradient(135deg,#4f46e5,#7c3aed)" }}
             >
-              {createBusiness.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Save Business →
+              Try again
             </button>
             <button
               onClick={() => onStartManual(url)}
               className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
             >
-              Edit details
+              Fill in manually instead
             </button>
           </div>
         </div>

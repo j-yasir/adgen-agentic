@@ -1,0 +1,412 @@
+p3_prompt_generation_rubric:
+  role: "Expert AI Image Generation Prompt Engineer specializing in identity-preserving photorealistic hairstyle transformations using Google Nano Banana (Gemini Pro Image / Flash Image)"
+  task_type: "Image_Generation_Prompt_Engineering"
+
+  inputs:
+    portrait_image: "The user's original portrait photograph provided as an image input to the Gemini API alongside the text prompt."
+    facial_analysis_json: |
+      {facial_analysis_json}
+    recommendation_json: |
+      {recommendation_json}
+
+  role_group:
+    description: >
+      Measures the quality of each generated image prompt — how effectively it
+      instructs Nano Banana (Gemini Pro Image / Flash Image) to preserve the
+      person's identity while applying the target hairstyle, how faithfully the
+      visual_generation_tags from P2 are translated into Nano Banana-optimized
+      narrative language, and how technically precise the photorealism directives
+      are. Every prompt must be traceable to a specific expert_recommendations
+      object in recommendation_json.
+
+      CRITICAL MODEL DIFFERENCE FROM SEEDREAM: Nano Banana is a reasoning model
+      that interprets full narrative briefs. Prompts must read like a director
+      briefing a senior photographer — not like a keyword list or a Seedream-style
+      technical parameter string. The portrait image is passed as a reference
+      alongside the text, so the identity preservation block corroborates what
+      the model sees rather than reconstructing it from scratch.
+
+      Identity preservation still takes absolute priority over hairstyle
+      description quality.
+    min_score_threshold: 0.75
+
+    dimensions:
+
+      - dimension_title: "Identity Preservation Instruction Quality"
+        weight: 0.35
+        instruction: >
+          Because Nano Banana receives the portrait as an image input alongside
+          the text prompt, the person descriptor sentence serves to CORROBORATE
+          and REINFORCE what the model sees — not to reconstruct the subject from
+          memory as required in text-only Seedream calls. The descriptor must
+          still appear and must still be accurate (derived from facial_analysis),
+          but it is shorter and anchoring in function rather than reconstructive.
+
+          Structure for each generation_prompt:
+
+          PART 1 — CONTEXT FRAME (1 sentence): State the use-case purpose.
+          Nano Banana's reasoning capability means providing creative context
+          causes it to make intelligent inferences about tone, lighting, and
+          realism. Example: "This is a photorealistic before/after hairstyle
+          consultation visualization for a professional styling session."
+
+          PART 2 — PERSON DESCRIPTOR (1 sentence): Name the subject's key
+          physical traits derived from facial_analysis — hair color/type,
+          skin tone, beard state, age, gender — so the model's text
+          understanding corroborates what it sees in the image.
+          Example: "The subject is a young adult male with dark black straight
+          thick hair, medium-olive skin tone, and a trimmed short beard."
+
+          PART 3 — IDENTITY PRESERVATION (positive framing MANDATORY):
+          Instruct the model to keep specific features unchanged. Because
+          Nano Banana's official guidance requires positive framing, every
+          constraint must be written as a preservation instruction, not a
+          prohibition. Use language such as "preserve identical", "maintain
+          exactly", "keep unchanged" — never "do not alter", "avoid changing".
+          Cover: face, facial bone structure, skin tone, expression, eye shape,
+          eyebrow shape, beard state (matching beard_integration from
+          recommendation_json), and skin texture.
+
+          The beard state instruction must exactly match beard_integration from
+          the corresponding recommendation_json card. If beard_integration
+          instructs clean shaven, the prompt must say "maintain a clean-shaven
+          appearance as in the reference image." If beard_integration instructs
+          growth, the prompt must say "preserve the beard with [style] as seen
+          in the portrait."
+
+        high_score_causal_factors:
+          - "Every generation_prompt opens with a one-sentence context frame naming the use case (hairstyle visualization, professional consultation, etc.)"
+          - "Person descriptor appears immediately after context frame, naming hair color/type, skin tone, beard state, age, and gender — derived from facial_analysis"
+          - "Identity preservation block uses positive framing throughout: 'preserve', 'maintain', 'keep identical' — never 'do not', 'avoid', 'no'"
+          - "Identity block names at least five specific features to preserve: face, skin tone, expression, eye shape, skin texture"
+          - "beard state in generation_prompt matches beard_integration from the corresponding recommendation_json card"
+          - "If beard_integration instructs clean shaven, prompt says 'maintain a clean-shaven appearance as in the reference'"
+          - "If beard_integration instructs growth or fade, prompt instructs to preserve and style beard accordingly"
+          - "Context frame enables Nano Banana's reasoning capability to infer professional realism standards without over-specifying every technical parameter"
+        low_score_causal_factors:
+          - "Context frame absent — model has no purpose anchor for its reasoning process"
+          - "Person descriptor absent or generic — must be derived from facial_analysis values"
+          - "Identity preservation block uses negative framing: 'do not alter', 'no changes to face', 'avoid' — incompatible with Nano Banana's official positive framing requirement"
+          - "Identity block is a single vague phrase such as 'keep the same person' — insufficient for a reasoning model"
+          - "beard state in generation_prompt contradicts beard_integration from recommendation_json"
+          - "Skin tone, expression, or eye shape not mentioned in the identity preservation block"
+          - "Identity preservation block placed after the hairstyle description instead of before it"
+          - "All {num_images} prompts use identical boilerplate identity blocks with no per-style beard variation"
+          - "Prompt uses Seedream-style technical parameter strings ('85mm, f/1.8, ISO 200') without any narrative context — NB benefits from narrative framing over raw technical parameters alone"
+
+      - dimension_title: "Hairstyle Translation Fidelity from P2 Tags"
+        weight: 0.30
+        instruction: >
+          The hairstyle description must be a rewritten, Nano Banana-optimized
+          NARRATIVE BRIEF translated from the visual_generation_tags in the
+          corresponding expert_recommendations card. Do not copy tags literally.
+          Do not use barber terminology that image models cannot interpret.
+
+          NANO BANANA DIFFERENCE: Because NB is a reasoning model that
+          understands narrative intent and creative direction, hairstyle
+          descriptions should be written as a director's brief to a photographer:
+          "I want you to show this person with [hairstyle], styled as if [context]."
+          This narrative approach causes NB to make intelligent decisions about
+          strand behavior, volume, light interaction, and finish without needing
+          every micro-detail spelled out.
+
+          Every hairstyle description must still include three visual dimensions:
+          (1) Approximate top length as a visual description of length and
+          direction of sweep — e.g., "hair swept back approximately 3 to 4 inches
+          long on top, stacked with height at the front."
+          (2) Side and temple zone described as a visual gradient outcome — e.g.,
+          "hair that shortens progressively toward the temples, blending close to
+          the skin on the sides."
+          (3) Product and finish type that creates the specific visual texture —
+          e.g., "held with matte clay for a separated, textured finish" or
+          "slicked flat with high-shine pomade for a polished, reflective surface."
+
+          Additionally for Nano Banana, add a MATERIALITY DESCRIPTOR: describe
+          the physical qualities of the hair itself — thickness, sheen, movement,
+          strand behavior — using sensory/material language rather than technical
+          parameters. Example: "each strand catches light with a natural, healthy
+          sheen; the overall shape has soft movement and falls with weight."
+
+        high_score_causal_factors:
+          - "Hairstyle description is written as a narrative director's brief, not a tag list or Seedream-style parameter string"
+          - "All barber jargon from visual_generation_tags is translated into visual outcome descriptions"
+          - "Each hairstyle description is visually and narratively distinct from the other prompts"
+          - "hairstyle_name in output exactly matches style_name from the corresponding recommendation_json card"
+          - "Top length expressed as a visual description of approximate length and direction of sweep"
+          - "Side and temple zone described as a visual gradient outcome — not a barber instruction"
+          - "Product and finish type named that drives the specific visual texture (matte, glossy, tousled, slicked)"
+          - "Materiality descriptor included: physical qualities of hair described with sensory/material language"
+          - "Narrative framing leverages NB's reasoning to infer composition and styling coherence without over-specification"
+        low_score_causal_factors:
+          - "visual_generation_tags copied literally into generation_prompt without rewriting"
+          - "Barber terms used: guard numbers, taper to skin, clipper-over-comb"
+          - "hairstyle_name does not match style_name from recommendation_json"
+          - "Two or more prompts describe the same visual hairstyle outcome"
+          - "Hairstyle description is a Seedream-style comma-separated tag string rather than narrative prose"
+          - "Hairstyle description has no indication of approximate top length"
+          - "Hairstyle description focuses only on the top and omits sides, temples, or finish"
+          - "Finish and texture not specified — model defaults to arbitrary surface quality"
+          - "Materiality descriptor absent — NB's reasoning capability is underutilized"
+
+      - dimension_title: "Photorealism and Technical Directive Quality"
+        weight: 0.20
+        instruction: >
+          CRITICAL NANO BANANA DIFFERENCE — TWO RULES CHANGE:
+
+          RULE 1 — POSITIVE FRAMING FOR QUALITY CONSTRAINTS:
+          Nano Banana's official guide requires positive framing. All quality
+          directives must describe what to render, never what to avoid.
+          Seedream style: "no plastic skin, no AI smoothing" → forbidden.
+          Nano Banana style: "render with natural skin texture showing realistic
+          pore detail and subsurface scattering" → correct.
+
+          RULE 2 — CONTEXT-DRIVEN INFERENCE IS PREFERRED OVER MICRO-SPECIFICATION:
+          Because NB is a reasoning model, giving it a professional context
+          ("for a high-end salon consultation portfolio") causes it to
+          automatically apply appropriate lighting, skin rendering, and lens
+          characteristics. Over-specification with raw EXIF parameters (ISO,
+          shutter speed) is less effective than narrative context. Focal length
+          references (85mm, 105mm) remain useful as they anchor rendering to
+          portrait photography norms, but surround them with narrative context.
+
+          Each prompt must include:
+          - A lighting instruction that describes matching the original portrait's
+            conditions (positively framed: "match the soft, diffused lighting
+            visible in the reference portrait")
+          - A skin rendering instruction using positive language and referencing
+            this person's specific skin tone
+          - A hair rendering instruction referencing this person's specific hair
+            texture and color (not generic "natural strand detail")
+          - A portrait photography context that steers toward photorealism
+          - Resolution/quality direction appropriate for professional output
+
+          The photorealism block must NOT be copy-pasted identically across all
+          {num_images} prompts. Hair rendering and skin rendering must reference the
+          specific person's attributes per the facial_analysis data.
+
+        high_score_causal_factors:
+          - "All quality directives use positive framing: describe what to render, never what to prohibit"
+          - "Lighting instruction uses positive framing to match original portrait conditions: 'match the lighting seen in the reference image'"
+          - "Skin texture instruction names this person's specific skin tone and describes the desired rendering quality positively"
+          - "Hair rendering instruction references this person's specific hair texture and color — not generic 'natural strand detail'"
+          - "Professional context phrase included that enables NB's reasoning to infer appropriate photographic standards"
+          - "Portrait focal length reference (85mm or 105mm) embedded in narrative context rather than listed as a raw parameter"
+          - "Photorealism blocks differ across the {num_images} prompts — not copy-pasted boilerplate"
+          - "No Seedream-style negatives inside the photorealism block ('no plastic skin', 'no AI glow')"
+        low_score_causal_factors:
+          - "Photorealism block uses negative framing: 'no plastic skin', 'no AI smoothing', 'avoid illustration style' — incompatible with NB's positive framing requirement"
+          - "Lighting instruction invents new dramatic lighting instead of matching the original portrait"
+          - "Skin texture quality stated negatively: 'no over-smoothing' instead of 'render with natural pore texture'"
+          - "Photorealism block is identical across all {num_images} generation_prompts"
+          - "Hair rendering instruction is generic ('natural strand detail') with no reference to this person's specific hair texture and color"
+          - "Prompt relies entirely on EXIF-style raw parameters (ISO, shutter speed, f/stop) without surrounding narrative context — less effective for a reasoning model"
+          - "Prompt uses illustration or painting terminology (digital art, oil painting style, rendered)"
+          - "No professional context phrase — NB's reasoning capability is not engaged"
+
+      - dimension_title: "Prompt Uniqueness, Scope Discipline, and Cleanliness"
+        weight: 0.15
+        instruction: >
+          Each of the {num_images} generation_prompt strings must be fully self-contained —
+          it must work as a standalone prompt with no external context required,
+          since the Gemini API receives each prompt independently alongside the
+          portrait image.
+
+          Every prompt must be unique: same structure but a different hairstyle
+          description, different materiality descriptor, and different
+          professional context nuance where relevant.
+
+          NANO BANANA DIFFERENCE — CONSTRAINT LANGUAGE:
+          Because NB requires positive framing, the "negative constraints sentence"
+          from the Seedream rubric is REPLACED by a "preservation confirmation
+          sentence" — a final statement that positively asserts what the portrait
+          retains. Instead of "do not alter face shape, do not change skin tone",
+          write "the subject's face shape, skin tone, expression, and background
+          remain identical to the reference portrait throughout this transformation."
+
+          NO PRONOUNS — MANDATORY:
+          Never use her, she, his, him in any generation_prompt.
+          Always refer to the person as "the subject" or "the person".
+          This applies regardless of the subject's apparent gender.
+
+          Do not reference the JSON, the analysis stage, or any pipeline
+          terminology inside the prompt text. Do not invent facial features,
+          props, backgrounds, or clothing not observable in the portrait.
+
+          Output only the JSON block. No prose, no markdown fences, no preamble.
+
+        high_score_causal_factors:
+          - "Every generation_prompt is self-contained and reads as a complete creative brief to a senior photographer or image model"
+          - "No two generation_prompts are interchangeable — each has a visually and narratively distinct hairstyle section"
+          - "No pipeline terminology appears inside prompt text"
+          - "No invented background, prop, clothing, or environmental details not present in the portrait"
+          - "Each generation_prompt ends with a positive preservation confirmation sentence — not a negative constraints list"
+          - "Preservation confirmation sentence positively asserts what remains unchanged: face shape, skin tone, expression, background"
+          - "Output is parseable by json.loads() with zero modification"
+          - "No markdown code fences surrounding the output"
+          - "No prose introduction or trailing commentary outside the JSON block"
+          - "Prompt reads as a narrative director's brief, not as a technical parameter string or keyword list"
+        low_score_causal_factors:
+          - "generation_prompt ends with a Seedream-style negative constraints list instead of a positive preservation confirmation"
+          - "generation_prompt references pipeline internals: 'based on the JSON', 'as recommended in phase 2'"
+          - "Two or more generation_prompts are near-identical with only the hairstyle name swapped"
+          - "Invented background or clothing description added to the prompt"
+          - "No preservation confirmation in any generation_prompt"
+          - "Output wrapped in markdown fences"
+          - "Prose preamble or explanation appears before the JSON block"
+          - "Prompt is a tag soup or comma-separated keyword list — incompatible with NB's narrative-first reasoning"
+          - "Any generation_prompt requires reading the recommendation_json to be interpretable"
+          - "Gendered pronouns used (her, she, his, him) — use 'the subject' or 'the person' instead"
+
+  task_type_group:
+    description: >
+      Measures structural compliance of the output JSON against the defined schema.
+      The canonical top-level key is prompts — no substitutes accepted. Every
+      prompt object must contain both required fields. All {num_images} prompt objects must
+      be present. hairstyle_name values must match the style_name values from the
+      corresponding recommendation_json objects exactly.
+
+      No change to schema structure for Nano Banana — the output contract is
+      identical to the Seedream version. Only prompt content and language
+      rules change.
+    min_score_threshold: 0.70
+
+    dimensions:
+
+      - dimension_title: "Top-Level Schema Compliance"
+        weight: 0.40
+        instruction: >
+          The output must contain exactly one top-level key: prompts. prompts must
+          be a JSON array containing exactly {num_images} objects. No other top-level keys are
+          permitted. The key name prompts is canonical — do not substitute
+          generation_prompts, outputs, results, hairstyles, or any variant.
+        high_score_causal_factors:
+          - "Top-level key is exactly 'prompts' — no variant spellings or synonyms"
+          - "prompts is a JSON array containing exactly {num_images} objects"
+          - "No additional top-level keys present beyond prompts"
+          - "Output is valid JSON parseable by json.loads() with no modification"
+        low_score_causal_factors:
+          - "Top-level key named 'generation_prompts', 'outputs', 'results', or any name other than 'prompts'"
+          - "prompts array contains fewer or more than {num_images} objects"
+          - "Additional unrequested top-level keys present in output"
+          - "Output is not valid JSON due to trailing commas, unquoted keys, or markdown contamination"
+
+      - dimension_title: "Prompt Object Field Completeness"
+        weight: 0.35
+        instruction: >
+          Every object inside the prompts array must contain both required fields:
+          hairstyle_name and generation_prompt. No field may be absent, null, or
+          an empty string. hairstyle_name must exactly match the style_name from
+          the corresponding expert_recommendations object in recommendation_json.
+          generation_prompt must be a non-empty string of at least 120 words —
+          sufficient to contain the context frame, person descriptor, identity
+          preservation block, dimensional hairstyle description with materiality
+          descriptor, photorealism directives, and preservation confirmation.
+        high_score_causal_factors:
+          - "All {num_images} prompt objects contain both fields: hairstyle_name and generation_prompt"
+          - "No field is null or empty string in any of the {num_images} objects"
+          - "hairstyle_name in each object exactly matches style_name from recommendation_json — verbatim, no paraphrasing"
+          - "generation_prompt in each object is a non-empty string of at least 120 words"
+          - "generation_prompt is a string, not a nested object or array"
+        low_score_causal_factors:
+          - "Any of the 2 required fields absent from any prompt object"
+          - "null or empty string used for any field in any object"
+          - "hairstyle_name is a paraphrase or shortened version of the P2 style_name instead of an exact match"
+          - "generation_prompt is shorter than 80 words — insufficient length to contain all required sections"
+          - "generation_prompt is a nested JSON object instead of a plain string"
+
+      - dimension_title: "Prompt Structure and Format Correctness"
+        weight: 0.25
+        instruction: >
+          Each generation_prompt string must follow a FIVE-part internal structure
+          in this exact order for Nano Banana:
+
+          Part 1 — Context frame (use-case purpose sentence)
+          Part 2 — Person descriptor (physical anchor from facial_analysis)
+          Part 3 — Identity preservation block (positive framing only)
+          Part 4 — Hairstyle description (narrative brief with all three visual
+                    dimensions plus materiality descriptor)
+          Part 5 — Photorealism directives + positive preservation confirmation
+
+          generation_prompt must be a plain string. No nested JSON, no lists,
+          no markdown formatting, no newline characters or bullet points.
+          hairstyle_name must preserve exact case, spacing, and punctuation
+          from the P2 style_name.
+
+          The five-part structure differs from the Seedream four-part structure
+          by adding the context frame at position 1 and replacing the negative
+          constraints sentence with a positive preservation confirmation at
+          position 5.
+
+        high_score_causal_factors:
+          - "Each generation_prompt follows the five-part order: context frame first, person descriptor second, identity preservation third, hairstyle fourth, photorealism and preservation confirmation fifth"
+          - "Context frame appears as the very first sentence in every prompt"
+          - "Preservation confirmation at end is positively framed — not a negative constraints list"
+          - "generation_prompt is a plain string in all {num_images} objects — not a nested object or list"
+          - "hairstyle_name preserves exact case, spacing, and punctuation from the P2 style_name"
+          - "No markdown formatting inside any generation_prompt string"
+          - "No newline characters or bullet points inside generation_prompt — it is a single continuous string"
+        low_score_causal_factors:
+          - "Context frame absent — prompt starts directly with person descriptor or hairstyle description"
+          - "Hairstyle description appears before identity preservation block in any prompt"
+          - "Preservation confirmation is a negative constraints list instead of a positive assertion"
+          - "generation_prompt contains markdown formatting, bullet points, or line breaks"
+          - "hairstyle_name differs in case or spacing from the P2 style_name"
+          - "generation_prompt is structured as a nested JSON object with sub-fields"
+          - "Prompt ends with Seedream-style negatives: 'do not alter face shape, do not change skin tone, no cartoon style'"
+
+  output_schema:
+    prompts:
+      type: array
+      length: {num_images}
+      item_fields:
+        hairstyle_name:
+          type: string
+          format: "Exact verbatim copy of style_name from the corresponding expert_recommendations object in recommendation_json. Preserve case, spacing, and punctuation."
+        generation_prompt:
+          type: string
+          format: >
+            A single continuous string of at least 120 words structured in FIVE parts.
+
+            Part 1 — Context Frame (1 sentence): State the use-case purpose so
+            Nano Banana's reasoning capability can infer appropriate professional
+            standards. Example: "This is a photorealistic hairstyle transformation
+            visualization for a professional styling consultation, rendered with
+            the accuracy of a high-end salon portfolio photograph."
+
+            Part 2 — Person Descriptor (1 sentence): Name the subject's key
+            physical characteristics derived from facial_analysis — hair color
+            and type, skin tone, beard state, approximate age and gender —
+            so the model's text understanding corroborates the reference image.
+            Example: "The subject is a young adult male with dark black straight
+            thick hair, medium-olive skin tone, and a trimmed short beard."
+
+            Part 3 — Identity Preservation (positive framing MANDATORY): Instruct
+            the image model to keep the person's face, facial bone structure, skin
+            tone, expression, eye shape, eyebrow shape, skin texture, and beard
+            state identical to the portrait. All language must be positive:
+            "preserve identical facial bone structure", "maintain exact skin
+            texture", "keep the expression unchanged". Specify the beard state
+            from beard_integration in the corresponding recommendation_json card.
+            Never use "do not", "avoid", "no", or "without" in this block.
+
+            Part 4 — Hairstyle Description (narrative director's brief): A
+            rewritten, Nano Banana-optimized narrative translation of
+            visual_generation_tags. Written as a creative brief to a senior
+            photographer. Must include: (a) approximate top length as a visual
+            description of length and direction of sweep, (b) side and temple
+            zone as a visual gradient outcome, (c) product and finish type that
+            creates the specific visual texture, (d) materiality descriptor —
+            physical qualities of the hair described with sensory/material
+            language (sheen, weight, movement, strand behavior).
+
+            Part 5 — Photorealism and Positive Preservation Confirmation:
+            Match original portrait lighting (positive: "match the lighting
+            conditions visible in the reference portrait"), render this person's
+            specific skin tone with natural texture and subsurface quality,
+            render this person's specific hair color and texture with individual
+            strand clarity and natural sheen, portrait photography at 85mm
+            focal length equivalent, high resolution. End with a positive
+            preservation confirmation sentence asserting what the portrait
+            retains: "The subject's face shape, skin tone, expression, clothing,
+            and background remain identical to the reference portrait throughout
+            this hairstyle transformation."

@@ -1,0 +1,12 @@
+{
+  "business_id": "REPLACE_WITH_REAL_BUSINESS_ID_AFTER_CREATION",
+  "campaign_name": "Authentic Running Shoes Sale — Up to 80% Off",
+  "objective": "conversion",
+  "platforms": ["instagram", "facebook"],
+  "asset_types": ["static_image", "email"],
+  "funnel_stage": "mofu",
+  "num_variants": 8,
+  "hero_products": ["Nike Quest 4", "Asics Gel-Kayano 21"],
+  "tone_override": "urgent",
+  "special_brief": "Push our pre-loved running shoe inventory — genuine Nike and Asics, personally inspected and condition-graded, up to 80% off retail. Audience already understands the pre-loved/resale concept; push them to check their size and buy before that one-of-a-kind pair sells out. Reassure on authenticity (personally inspected, not counterfeit) since that is this audience's biggest hesitation."
+}

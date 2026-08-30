@@ -9,9 +9,24 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any
 
 from agents.strategist.schemas import AssetBrief, DistributionPlan
+
+# Fullwidth → ASCII map for characters the kie.ai proxy substitutes.
+_FULLWIDTH_MAP = str.maketrans(
+    "＆＊＠！？，。；：",
+    "&*@!?,.;:",
+)
+
+def _norm(s: str) -> str:
+    """Normalise a product name for fuzzy comparison.
+
+    Converts fullwidth Unicode punctuation (e.g. ＆ → &) that LLMs sometimes
+    emit when the kie.ai proxy has mangled the input, then lowercases.
+    """
+    return unicodedata.normalize("NFKC", s).translate(_FULLWIDTH_MAP).lower()
 
 
 class StrategistError(Exception):
@@ -57,7 +72,7 @@ PLATFORM_FORMATS: dict[str, set[str]] = {
     "facebook":  {"9:16", "4:5", "1:1", "16:9"},
     "tiktok":    {"9:16"},
     "youtube":   {"9:16", "16:9"},
-    "google":    {"1:1", "16:9"},
+    "google":    {"1:1", "16:9", "search_ad", "responsive", "banner"},
     "linkedin":  {"1:1", "4:5", "16:9"},
     "email":     {"email"},
 }
@@ -93,14 +108,24 @@ def validate_plan(plan: DistributionPlan, state: dict) -> list[str]:
     if len(ids) != len(set(ids)):
         violations.append("asset_id values must be unique (found duplicates).")
 
-    # Platform coverage — email assets always live on the 'email' platform, so
-    # the requested (social) platforms must be covered by static/video assets.
+    # Platform coverage — email assets live on the 'email' pseudo-platform, so
+    # only non-email briefs count as social platform slots.
     requested_platforms = set(state.get("platforms") or [])
-    used_platforms = {b.platform for b in briefs}
+    social_briefs = [b for b in briefs if b.platform != "email"]
+    used_platforms = {b.platform for b in social_briefs}
     missing = requested_platforms - used_platforms
-    if missing and len(briefs) >= len(requested_platforms):
+    # Only flag if there are enough social slots to cover every platform.
+    if missing and len(social_briefs) >= len(requested_platforms):
+        platform_hints = []
+        if "google" in missing:
+            platform_hints.append(
+                "For Google, add a static_image asset with format '1:1' or '16:9' "
+                "(display ad) — or 'search_ad'/'responsive'/'banner' for text-only."
+            )
+        hint = (" " + " ".join(platform_hints)) if platform_hints else ""
         violations.append(
-            f"Requested platforms not covered by any asset: {sorted(missing)}."
+            f"Requested platforms not covered by any asset: {sorted(missing)}. "
+            f"You MUST include at least one asset_brief for EACH of these platforms.{hint}"
         )
 
     # Asset-type coverage when the variant count allows it.
@@ -114,7 +139,9 @@ def validate_plan(plan: DistributionPlan, state: dict) -> list[str]:
     extra_types = used_types - requested_types if requested_types else set()
     if extra_types:
         violations.append(
-            f"Asset types used that were not requested: {sorted(extra_types)}."
+            f"Asset types used that were not requested: {sorted(extra_types)}. "
+            f"You MUST use ONLY these asset types: {sorted(requested_types)}. "
+            f"For TikTok without video_ad, use static_image with format 9:16 instead."
         )
 
     for b in briefs:
@@ -145,11 +172,11 @@ def validate_plan(plan: DistributionPlan, state: dict) -> list[str]:
 
     # Hero product existence — every hero_product must be a real BKO product.
     known = _known_product_names(state)
-    known_lower = [n.lower() for n in known]
+    known_norm = [_norm(n) for n in known]
     if known:
         for b in briefs:
-            hp = b.hero_product.lower()
-            if not any(hp in k or k in hp for k in known_lower):
+            hp = _norm(b.hero_product)
+            if not any(hp in k or k in hp for k in known_norm):
                 violations.append(
                     f"{b.asset_id}: hero_product '{b.hero_product}' is not a known "
                     f"product (known: {known})."
@@ -160,26 +187,26 @@ def validate_plan(plan: DistributionPlan, state: dict) -> list[str]:
     # product from the wider BKO catalog (e.g. not the umbrella/parent name).
     campaign_hero_products = [n for n in (state.get("hero_products") or []) if n]
     if campaign_hero_products:
-        hero_lower = [n.lower() for n in campaign_hero_products]
+        hero_norm = [_norm(n) for n in campaign_hero_products]
         for b in briefs:
-            hp = b.hero_product.lower()
-            if not any(hp in h or h in hp for h in hero_lower):
+            hp = _norm(b.hero_product)
+            if not any(hp in h or h in hp for h in hero_norm):
                 violations.append(
                     f"{b.asset_id}: hero_product '{b.hero_product}' must be one of "
                     f"the campaign's specified hero products {campaign_hero_products} "
                     f"— not a different BKO catalog product."
                 )
-        if len(briefs) > 1 and len(hero_lower) > 1:
-            featured = {b.hero_product.lower() for b in briefs}
+        if len(briefs) > 1 and len(hero_norm) > 1:
+            featured = {_norm(b.hero_product) for b in briefs}
             if len(featured) == 1:
                 violations.append(
                     "All assets feature the same hero_product — distribute across "
                     "the campaign's specified hero products."
                 )
-    elif known and len(briefs) > 1 and len(set(known_lower)) > 1:
+    elif known and len(briefs) > 1 and len(set(known_norm)) > 1:
         # No campaign-specific list was given — fall back to the looser
         # "don't dominate the whole plan with one catalog product" check.
-        featured = {b.hero_product.lower() for b in briefs}
+        featured = {_norm(b.hero_product) for b in briefs}
         if len(featured) == 1:
             violations.append(
                 "All assets feature the same hero_product — distribute across products."

@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from db.session import SessionLocal
@@ -110,3 +111,21 @@ app.include_router(products_router.router, prefix="/api/v1")
 app.include_router(campaigns_router.router, prefix="/api/v1")
 app.include_router(stream_router.router, prefix="/api/v1")
 app.include_router(agents_router.router, prefix="/api/v1")
+
+# Serve business input assets (logos, product photos) at /business-assets/<path>
+# Serve pipeline-generated assets (ads, images) at /generations/<path>
+# Both mounts come AFTER routers so router paths always take precedence.
+import os as _os
+_os.makedirs("business_assets", exist_ok=True)
+_os.makedirs("generations", exist_ok=True)
+
+app.mount(
+    "/business-assets",
+    StaticFiles(directory="business_assets"),
+    name="business-assets",
+)
+app.mount(
+    "/generations",
+    StaticFiles(directory="generations"),
+    name="generations",
+)

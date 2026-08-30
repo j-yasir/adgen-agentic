@@ -1,0 +1,27 @@
+{
+  "name": "Sea Buckthorn Preserve",
+  "type": "physical",
+  "is_hero": false,
+  "description": "Small-batch preserve made from wild sea-buckthorn berries hand-picked at 2,700m in Gilgit-Baltistan. Tart, vitamin-C-rich, and cooked in small batches within hours of harvest.",
+  "key_features": [
+    "100% natural — zero preservatives, zero artificial colour",
+    "Wild-harvested sea-buckthorn, unavailable in commercial production",
+    "Small-batch production — max 200 jars per batch",
+    "Hand-labelled glass jars, gift-ready packaging"
+  ],
+  "benefits": [
+    "A tart, distinctive flavour unlike any commercial jam",
+    "Naturally high in vitamin C — a healthier gifting choice",
+    "A meaningful gift — every jar tells the story of GB",
+    "Supports local GB farming families directly"
+  ],
+  "pricing_model": "one_time",
+  "pricing_tier": "mid",
+  "pricing_details": "PKR 950 per 250g jar, PKR 2,200 for a gift box of 3",
+  "unique_selling_points": [
+    "The only Pakistani preserve brand sourcing wild sea-buckthorn from Gilgit-Baltistan",
+    "Distinct tart flavour profile unavailable anywhere outside GB",
+    "Every batch is traceable to a named farm in Ghizer"
+  ],
+  "target_use_case": "Daily breakfast table, gifting for Eid and weddings, health-conscious buyers"
+}

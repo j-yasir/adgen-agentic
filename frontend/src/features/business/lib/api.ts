@@ -1,5 +1,5 @@
 import { apiClient } from "@/shared/lib/api-client";
-import type { BusinessResponse, BusinessListResponse, CreateBusinessRequest } from "../types";
+import type { BusinessResponse, BusinessListResponse, CreateBusinessRequest, CreateBusinessFromUrlRequest } from "../types";
 
 export const businessApi = {
   list: () => apiClient<BusinessListResponse>("/businesses"),
@@ -12,10 +12,22 @@ export const businessApi = {
       body: JSON.stringify(data),
     }),
 
+  createFromUrl: (data: CreateBusinessFromUrlRequest) =>
+    apiClient<BusinessResponse>("/businesses/from-url", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   update: (id: string, data: Partial<CreateBusinessRequest>) =>
     apiClient<BusinessResponse>(`/businesses/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+
+  patchBkoField: (id: string, path: string, value: unknown) =>
+    apiClient<BusinessResponse>(`/businesses/${id}/bko`, {
+      method: "PATCH",
+      body: JSON.stringify({ path, value }),
     }),
 
   delete: (id: string) =>

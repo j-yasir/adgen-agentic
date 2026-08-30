@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -170,7 +170,9 @@ class ComplianceFormSection(BaseModel):
 # ── Top-level request ─────────────────────────────────────────────────────────
 
 class CreateBusinessRequest(BaseModel):
-    onboarding_path: Literal["form"] = "form"   # only form implemented for now
+    onboarding_path: Literal["form", "url"] = "form"   # "url" is only ever set internally,
+                                                        # by the URL-onboarding structuring stage —
+                                                        # never accepted directly from a client request
     company: CompanyFormSection
     product: Optional[ProductFormSection] = None
     audience: AudienceFormSection
@@ -179,6 +181,12 @@ class CreateBusinessRequest(BaseModel):
     social_proof: SocialProofFormSection
     marketing: MarketingFormSection
     compliance: ComplianceFormSection = Field(default_factory=ComplianceFormSection)
+
+
+class BkoPatchRequest(BaseModel):
+    """Surgical single-field patch — no LLM rebuild, just update one leaf."""
+    path: str   # dot-separated, e.g. "identity.tagline" or "brand.dos"
+    value: Any  # new value; type is inferred from existing BKO structure
 
 
 class UpdateBusinessRequest(BaseModel):
@@ -191,6 +199,24 @@ class UpdateBusinessRequest(BaseModel):
     social_proof: Optional[SocialProofFormSection] = None
     marketing: Optional[MarketingFormSection] = None
     compliance: Optional[ComplianceFormSection] = None
+
+
+class CreateBusinessFromUrlRequest(BaseModel):
+    """Kick off URL-based onboarding — an LLM agent (web_search only, no
+    scraper) researches the given site and fills in the BKO. Returns
+    immediately with a 'pending' business; the client streams progress via
+    GET /stream/businesses/{id} and re-fetches once onboarding_status
+    flips to 'complete'. The result is a normal, fully-editable business —
+    PATCH /businesses/{id} works on it exactly like any form-created one."""
+    url: str = Field(..., description="The business's website URL, e.g. https://example.com")
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url(cls, v: str) -> str:
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("url must start with http:// or https://")
+        return v
 
 
 # ── Responses ─────────────────────────────────────────────────────────────────
@@ -212,3 +238,16 @@ class BusinessResponse(BaseModel):
 class BusinessListResponse(BaseModel):
     businesses: list[BusinessResponse]
     total: int
+
+
+class BusinessEventResponse(BaseModel):
+    """URL-onboarding progress event — same shape as CampaignEventResponse
+    (schemas/campaign.py), kept as its own type since the FK column is
+    business_id, not campaign_id."""
+    id:          uuid.UUID
+    business_id: uuid.UUID
+    seq:         int
+    event_type:  str
+    agent:       Optional[str]
+    payload:     dict
+    created_at:  datetime

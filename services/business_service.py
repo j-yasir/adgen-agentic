@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -8,6 +9,7 @@ from repos import business_repo, product_repo
 from schemas.business import (
     AudienceFormSection,
     BrandFormSection,
+    BusinessEventResponse,
     BusinessListResponse,
     BusinessResponse,
     CompanyFormSection,
@@ -75,6 +77,121 @@ def create(
 
     row["bko"] = assemble_products_into_bko(db, row["id"], user_id, row.get("bko") or {})
     return BusinessResponse(**row)
+
+
+# ── URL-based onboarding (agent-researched, no scraper — see
+# agents/business_researcher/) ─────────────────────────────────────────────
+#
+# Two steps, split across the sync request and the async background task:
+#   1. create_pending()       — instant, returns a real id to stream against
+#   2. finalize_from_research() — once the agent has a validated CreateBusinessRequest,
+#      reuses build_from_form() exactly like the form path does — the function
+#      doesn't care whether a human or an agent filled in the sections.
+
+def _domain_from_url(url: str) -> str:
+    host = urlparse(url).netloc or url
+    return host[4:] if host.startswith("www.") else host
+
+
+def create_pending(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    url: str,
+) -> BusinessResponse:
+    logger.info("Creating pending (URL-onboarding) business for user_id=%s url=%s", user_id, url)
+    row = business_repo.create(
+        db,
+        user_id=user_id,
+        name=_domain_from_url(url),
+        website=url,
+        industry=None,
+        bko={},
+        onboarding_path="url",
+        onboarding_status="pending",
+    )
+    logger.info("Pending business created id=%s", row["id"])
+    return BusinessResponse(**row)
+
+
+def finalize_from_research(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: CreateBusinessRequest,
+) -> BusinessResponse:
+    logger.info(
+        "Finalizing URL-onboarded business_id=%s name='%s'", business_id, data.company.name,
+    )
+
+    bko = bko_service.build_from_form(data)
+
+    row = business_repo.finalize(
+        db,
+        business_id=business_id,
+        user_id=user_id,
+        name=data.company.name,
+        website=data.company.website,
+        industry=data.company.industry,
+        bko=bko.model_dump(),
+    )
+    if not row:
+        raise NotFoundError(f"Business {business_id} not found")
+
+    if data.product is not None:
+        p = data.product
+        product_repo.create(
+            db,
+            business_id=business_id,
+            user_id=user_id,
+            name=p.name,
+            type=p.product_type,
+            is_hero=True,
+            description=p.description,
+            key_features=p.key_features,
+            benefits=p.key_benefits,
+            pricing_model=p.pricing_model,
+            pricing_tier=p.pricing_tier,
+            pricing_details=p.pricing_details,
+            unique_selling_points=p.unique_selling_points,
+            target_use_case=p.target_use_case,
+        )
+        logger.info("Convenience-created product '%s' for business_id=%s", p.name, business_id)
+
+    logger.info(
+        "Business finalized id=%s completeness=%.0f%%",
+        business_id, bko.meta.completeness_score * 100,
+    )
+    row["bko"] = assemble_products_into_bko(db, business_id, user_id, row.get("bko") or {})
+    return BusinessResponse(**row)
+
+
+def get_events(
+    db: Session,
+    *,
+    business_id: uuid.UUID,
+    user_id: uuid.UUID,
+    after_seq: int = 0,
+) -> list[BusinessEventResponse]:
+    # Ownership check — mirrors campaign_service.get_events()
+    row = business_repo.get_by_id(db, business_id, user_id)
+    if not row:
+        raise NotFoundError(f"Business {business_id} not found")
+    events = business_repo.get_events(db, business_id, after_seq=after_seq)
+    return [BusinessEventResponse(**e) for e in events]
+
+
+def mark_onboarding_failed(db: Session, business_id: uuid.UUID, user_id: uuid.UUID) -> None:
+    """Research or structuring failed after repairs — remove the pending
+    placeholder rather than leaving a permanently-empty business sitting in
+    the list. onboarding_status has no 'failed' value; deleting keeps that
+    CHECK constraint untouched rather than widening it for one edge case —
+    the client sees the failure via the business_failed SSE event before
+    this runs, so nothing is lost, just not left behind as clutter."""
+    logger.warning("URL onboarding failed — removing pending business_id=%s", business_id)
+    business_repo.delete(db, business_id, user_id)
+    storage.delete_business_assets_dir(str(business_id))
 
 
 def get_one(
@@ -157,6 +274,38 @@ def delete(db: Session, business_id: uuid.UUID, user_id: uuid.UUID) -> None:
 # risks the rebuild dropping fields the caller's payload doesn't happen to
 # mention. A direct, surgical mutation of the one field that changed is both
 # simpler and safer.
+
+def _bko_set_path(bko: dict, path: str, value: object) -> dict:
+    """Return a shallow-copy of *bko* with the leaf at *path* replaced."""
+    import copy
+    result = copy.deepcopy(bko)
+    parts = path.split(".")
+    node: object = result
+    for part in parts[:-1]:
+        if isinstance(node, list):
+            node = node[int(part)]
+        else:
+            node = (node or {}).setdefault(part, {})  # type: ignore[union-attr]
+    last = parts[-1]
+    if isinstance(node, list):
+        node[int(last)] = value
+    else:
+        node[last] = value  # type: ignore[index]
+    return result
+
+
+def patch_bko_field(
+    db: Session,
+    business_id: uuid.UUID,
+    user_id: uuid.UUID,
+    path: str,
+    value: object,
+) -> "BusinessResponse":
+    logger.info("Patching BKO field path=%s business_id=%s", path, business_id)
+    existing, bko = _get_business_and_bko(db, business_id, user_id)
+    updated_bko = _bko_set_path(bko, path, value)
+    return _save_bko(db, business_id, user_id, existing, updated_bko)
+
 
 def _get_business_and_bko(db: Session, business_id: uuid.UUID, user_id: uuid.UUID) -> tuple[dict, dict]:
     existing = business_repo.get_by_id(db, business_id, user_id)

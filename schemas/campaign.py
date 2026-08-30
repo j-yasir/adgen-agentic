@@ -48,6 +48,7 @@ class AssetResponse(BaseModel):
     storage_url:  str
     prompt_used:  Optional[str]
     status:       str
+    metadata:     dict = Field(default_factory=dict)
     created_at:   datetime
 
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from repos import business_repo, product_repo
 from schemas.product import (
+    CreateProductFromUrlRequest,
     CreateProductRequest,
     ProductImageResponse,
     ProductListResponse,
@@ -58,6 +59,64 @@ def create(
         target_use_case=data.target_use_case,
     )
     return ProductResponse(**row, images=[])
+
+
+async def create_from_url(
+    db: Session, business_id: uuid.UUID, user_id: uuid.UUID, data: CreateProductFromUrlRequest,
+) -> ProductResponse:
+    """Synchronous end-to-end: research (web_search agent) -> structure
+    (LLM, schemas.product.CreateProductRequest) -> create() [reused as-is] ->
+    deterministic (no LLM) image lookup on the page the agent found ->
+    upload_image() [reused as-is, same validation as a manual upload].
+
+    A failed or missing image never fails the request — the product is still
+    created and returned, just without a photo, exactly like a manual
+    product creation with no image upload yet."""
+    from agents.business_researcher.agent import product_researcher_agent
+    from agents.business_researcher.prompts import build_product_research_input
+    from agents.business_researcher.schemas import ProductFindings
+    from agents.business_researcher.skills import structure_product_findings
+    from agents.business_researcher.validation import BusinessResearchError
+    from agents.strategist.validation import parse_json_object
+    from langchain_core.messages import HumanMessage
+    from pydantic import ValidationError
+    from utils.product_image_finder import fetch_image_bytes, find_product_image_url
+
+    _require_business(db, business_id, user_id)
+    logger.info("Researching product from url=%s business_id=%s", data.url, business_id)
+
+    result = await product_researcher_agent.ainvoke({
+        "messages": [HumanMessage(content=build_product_research_input(data.url))],
+    })
+    final_msg = result["messages"][-1]
+    raw = final_msg.content if isinstance(final_msg.content, str) else str(final_msg.content)
+    try:
+        findings = ProductFindings.model_validate(parse_json_object(raw))
+    except (ValueError, ValidationError) as exc:
+        raise BusinessResearchError(f"Product research produced invalid findings: {exc}") from exc
+
+    structured = await structure_product_findings(findings, data.url)
+
+    product = create(db, business_id, user_id, structured)
+    logger.info("Product created from URL id=%s name='%s'", product.id, product.name)
+
+    # Image lookup is best-effort and deterministic — never blocks product creation.
+    image_page = findings.product_page_url or data.url
+    image_url = find_product_image_url(image_page)
+    if image_url:
+        image_bytes = fetch_image_bytes(image_url)
+        if image_bytes:
+            try:
+                upload_image(db, business_id, product.id, user_id, image_bytes)
+                logger.info("Product image auto-attached id=%s source=%s", product.id, image_url)
+            except Exception:
+                logger.exception("Auto image upload failed product_id=%s image_url=%s", product.id, image_url)
+        else:
+            logger.info("Product image download failed product_id=%s image_url=%s", product.id, image_url)
+    else:
+        logger.info("No product image found for product_id=%s page=%s", product.id, image_page)
+
+    return get_one(db, business_id, product.id, user_id)
 
 
 def list_for_business(

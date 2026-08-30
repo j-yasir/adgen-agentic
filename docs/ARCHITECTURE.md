@@ -415,7 +415,7 @@ exists today and each agent's role in the pipeline.
 |---|---|---|
 | **Researcher** | ✅ Built | Single ReAct agent (`web_search`, `scrape_url`, `retrieve_past_campaigns` tools). Turns the BKO + campaign brief into a `ResearchReport`: competitor patterns, platform specs, audience intelligence, recommended angles. **Known gap:** no schema validation or repair loop yet — a malformed/fenced JSON response falls back to a raw-text wrapper rather than being retried, and platform coverage isn't checked (a requested platform can silently get no research). |
 | **Strategist** | ✅ Built (v2) | Not a single ReAct agent — a 3-stage pipeline: a planning agent decides asset distribution and campaign narrative, three specialist skills (static/video/email) write copy in parallel with domain-specific playbooks, and a pure-code assembly stage validates the result against the campaign brief and repairs narrow violations before persisting. Full detail: [agents/STRATEGIST_AGENT_V2.md](./agents/STRATEGIST_AGENT_V2.md). |
-| **Producer** | 🔜 Prospected | Executes `strategy_doc.asset_plan` one asset at a time, routing each entry to a dedicated sub-agent by `asset_type`: a static-image sub-agent (builds an image-generation prompt from `image_prompt` + `text_overlay` + BKO visual identity, calls `utils/MediaGen`, stores the result), a video-ad sub-agent (builds a generation prompt from the Strategist's timed `script`, calls `utils/MediaGen`'s video path), and an email sub-agent (renders `body_paragraphs`/`subject_line`/`cta_text` into styled, mobile-first HTML). Each produced asset is persisted via `sp_create_asset` and its `storage_url` recorded. |
+| **Producer** | 🚧 Partially built | `ProducerPipeline` (`agents/producer/graph.py`) routes `strategy_doc.asset_plan` entries by `asset_type`. **static_image is built**: a 2-phase sub-agent — one LLM call writes a production-grade nano-banana prompt (superseding the Strategist's draft `image_prompt`), then pure code resolves the real logo/product image via `resolve_brand_assets()` and calls `utils/MediaGen` (`nano-banana-pro`). Full design: [agents/STATIC_AD_AGENT.md](./agents/STATIC_AD_AGENT.md). **video_ad and email sub-agents are not built** — no video/voice generation provider exists yet (see [agents/BUILDER_AGENT_DATA_AUDIT.md](./agents/BUILDER_AGENT_DATA_AUDIT.md)); those `asset_plan` entries are logged and omitted rather than faked. Each produced asset is persisted via `sp_create_asset` and its `storage_url` recorded. |
 | **Auditor** | 🔜 Prospected | Scores every asset the Producer generates on three weighted dimensions — brand alignment (0.40, tone/visual style vs. BKO identity and `donts`), hook strength (0.35, first-frame/first-line attention capture), platform fit (0.25, format/pacing/aesthetic vs. platform norms) — via multimodal scoring for visual assets and text scoring for copy. Aggregates a weighted average per asset and decides: pass (`assets_approved`) or send back to the Producer with a structured critique (`assets_rejected`), bounded by `retry_count <= 2` before forcing the campaign to human review regardless of score. |
 
 ### Agent → orchestrator contract
@@ -624,6 +624,9 @@ adGen-agentic/
     ├── ARCHITECTURE.md            # this file
     ├── AGENT_ARCHITECTURE.md      # universal agent pattern (AgentBuilder, tools/skills, LLM factory)
     ├── agents/STRATEGIST_AGENT_V2.md
+    ├── agents/STATIC_AD_AGENT.md
+    ├── agents/EMAIL_TEMPLATE_AGENT.md
+    ├── agents/BUILDER_AGENT_DATA_AUDIT.md
     ├── DATABASE.md, CAMPAIGN_PIPELINE.md, BUILT_SO_FAR.md  # older reference docs — not all current
 ```
 

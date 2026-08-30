@@ -18,7 +18,7 @@ import {
   ArrowRight,
   AlertTriangle,
 } from "lucide-react";
-import type { CampaignEvent } from "../types";
+import type { AgentActivityEvent } from "@/shared/types";
 
 const AGENT_CONFIG: Record<string, { icon: typeof Bot; color: string }> = {
   researcher: { icon: FlaskConical, color: "text-blue-400" },
@@ -29,7 +29,7 @@ const AGENT_CONFIG: Record<string, { icon: typeof Bot; color: string }> = {
   system: { icon: Sparkles, color: "text-green-400" },
 };
 
-function getEventIcon(event: CampaignEvent) {
+function getEventIcon(event: AgentActivityEvent) {
   switch (event.event_type) {
     case "agent_started": {
       const cfg = AGENT_CONFIG[event.agent ?? "orchestrator"];
@@ -51,15 +51,17 @@ function getEventIcon(event: CampaignEvent) {
     case "status_changed":
       return <ArrowRight className="h-4 w-4 text-indigo-400" />;
     case "campaign_done":
+    case "business_ready":
       return <Sparkles className="h-4 w-4 text-green-400" />;
     case "campaign_failed":
+    case "business_failed":
       return <AlertCircle className="h-4 w-4 text-red-400" />;
     default:
       return <Bot className="h-4 w-4 text-muted-foreground" />;
   }
 }
 
-function getEventMessage(event: CampaignEvent): string {
+function getEventMessage(event: AgentActivityEvent): string {
   const p = event.payload;
 
   if (typeof p.message === "string") return p.message;
@@ -87,12 +89,16 @@ function getEventMessage(event: CampaignEvent): string {
       return "Campaign completed successfully";
     case "campaign_failed":
       return typeof p.error === "string" ? p.error : "Campaign failed";
+    case "business_ready":
+      return "Business profile ready for review";
+    case "business_failed":
+      return typeof p.error === "string" ? p.error : "Onboarding failed";
     default:
       return typeof p.message === "string" ? p.message : JSON.stringify(p).slice(0, 80);
   }
 }
 
-export function ActivityFeed({ events }: { events: CampaignEvent[] }) {
+export function ActivityFeed({ events }: { events: AgentActivityEvent[] }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const userScrolledUp = useRef(false);
@@ -134,9 +140,9 @@ export function ActivityFeed({ events }: { events: CampaignEvent[] }) {
               "flex items-start gap-3 rounded-lg px-3 py-2 text-sm transition-all animate-in slide-in-from-bottom-1 duration-200",
               event.event_type === "hitl_required" &&
                 "bg-amber-500/5 border border-amber-500/20",
-              event.event_type === "campaign_done" &&
+              (event.event_type === "campaign_done" || event.event_type === "business_ready") &&
                 "bg-green-500/5 border border-green-500/20",
-              (event.event_type === "campaign_failed" || event.event_type === "agent_error") &&
+              (event.event_type === "campaign_failed" || event.event_type === "business_failed" || event.event_type === "agent_error") &&
                 "bg-red-500/5 border border-red-500/20"
             )}
           >

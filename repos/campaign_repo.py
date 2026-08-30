@@ -186,12 +186,17 @@ def create_asset(
     asset_type: str,
     storage_url: str,
     prompt_used: Optional[str] = None,
+    metadata: Optional[dict] = None,
+    status: str = "stored",
 ) -> dict:
-    logger.debug("Creating asset campaign_id=%s platform=%s type=%s", campaign_id, platform, asset_type)
+    import json
+
+    logger.debug("Creating asset campaign_id=%s platform=%s type=%s status=%s", campaign_id, platform, asset_type, status)
     row = db.execute(
         text(
             "SELECT * FROM sp_create_asset("
-            ":campaign_id, :platform, :format, :asset_type, :storage_url, :prompt_used"
+            ":campaign_id, :platform, :format, :asset_type, :storage_url, :prompt_used, "
+            "CAST(:metadata AS JSONB), :status"
             ")"
         ),
         {
@@ -201,6 +206,8 @@ def create_asset(
             "asset_type":   asset_type,
             "storage_url":  storage_url,
             "prompt_used":  prompt_used,
+            "metadata":     json.dumps(metadata or {}),
+            "status":       status,
         },
     ).mappings().first()
     db.commit()

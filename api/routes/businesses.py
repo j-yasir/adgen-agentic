@@ -2,14 +2,17 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from api.dependencies import get_current_user
 from db.session import get_db
 from schemas.business import (
+    BkoPatchRequest,
+    BusinessEventResponse,
     BusinessListResponse,
     BusinessResponse,
+    CreateBusinessFromUrlRequest,
     CreateBusinessRequest,
     UpdateBusinessRequest,
 )
@@ -30,6 +33,54 @@ def create_business(
     current_user: dict = Depends(get_current_user),
 ):
     return business_service.create(db, data, user_id=current_user["id"])
+
+
+@router.post(
+    "/from-url",
+    response_model=BusinessResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Create a business by researching its website (no scraper — an LLM agent with web search)",
+    description=(
+        "Returns immediately with a 'pending' business — an agent researches the "
+        "given URL (and the open web beyond it) in the background and fills in the "
+        "BKO. Stream progress via GET /stream/businesses/{id}, or catch up via "
+        "GET /businesses/{id}/events. Once onboarding_status flips to 'complete', "
+        "the business behaves exactly like a form-created one — PATCH works on it "
+        "the same way, so the user can review and correct anything the agent got wrong."
+    ),
+)
+def create_business_from_url(
+    data: CreateBusinessFromUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    business = business_service.create_pending(db, user_id=current_user["id"], url=data.url)
+
+    from tasks.business_onboarding_runner import run_url_onboarding
+    background_tasks.add_task(
+        run_url_onboarding,
+        business_id=str(business.id),
+        user_id=str(current_user["id"]),
+        url=data.url,
+    )
+    return business
+
+
+@router.get(
+    "/{business_id}/events",
+    response_model=list[BusinessEventResponse],
+    summary="Get URL-onboarding event log for a business (supports catch-up via after_seq)",
+)
+def get_business_events(
+    business_id: uuid.UUID,
+    after_seq: int = Query(default=0, ge=0, description="Return only events with seq > this value"),
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return business_service.get_events(
+        db, business_id=business_id, user_id=current_user["id"], after_seq=after_seq,
+    )
 
 
 @router.get(
@@ -69,6 +120,23 @@ def update_business(
     current_user: dict = Depends(get_current_user),
 ):
     return business_service.update(db, business_id=business_id, user_id=current_user["id"], data=data)
+
+
+@router.patch(
+    "/{business_id}/bko",
+    response_model=BusinessResponse,
+    summary="Surgical single-field BKO patch — no LLM rebuild",
+)
+def patch_bko_field(
+    business_id: uuid.UUID,
+    data: BkoPatchRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    return business_service.patch_bko_field(
+        db, business_id=business_id, user_id=current_user["id"],
+        path=data.path, value=data.value,
+    )
 
 
 @router.delete(
