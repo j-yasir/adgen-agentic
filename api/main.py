@@ -20,6 +20,7 @@ from api.routes import products as products_router
 from api.routes import campaigns as campaigns_router
 from api.routes import stream as stream_router
 from api.routes import agents as agents_router
+from api.routes import seed as seed_router
 from orchestrator.checkpointer import get_checkpointer_dsn
 from orchestrator.graph import build_graph, set_compiled_graph
 
@@ -111,6 +112,7 @@ app.include_router(products_router.router, prefix="/api/v1")
 app.include_router(campaigns_router.router, prefix="/api/v1")
 app.include_router(stream_router.router, prefix="/api/v1")
 app.include_router(agents_router.router, prefix="/api/v1")
+app.include_router(seed_router.router, prefix="/api/v1")
 
 # Serve business input assets (logos, product photos) at /business-assets/<path>
 # Serve pipeline-generated assets (ads, images) at /generations/<path>

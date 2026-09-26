@@ -1,12 +1,17 @@
 # AdGen-Agentic
 
 An autonomous multi-agent ad generation system. Onboard a business once (building a **Business Knowledge
-Object**), then launch campaigns that a LangGraph pipeline of specialist agents — Researcher, Strategist,
-Producer, Auditor — turns into finished ad assets, pausing for your review at key checkpoints along the way.
+Object**, with a real logo and per-product photo galleries), then launch campaigns that a LangGraph pipeline
+of specialist agents — Researcher, Strategist, Producer, Auditor — turns into finished ad assets: real
+generated static image ads and rendered marketing emails, grounded in the business's actual brand assets,
+pausing for your review at key checkpoints along the way.
 
 For the full system design, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (system architecture, API,
-durable-execution retry, streaming) and [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md) (the
-pattern every agent is built from).
+durable-execution retry, streaming), [docs/pipeline.md](docs/pipeline.md) (exactly what data flows through
+research → strategy, field by field), and [docs/AGENT_ARCHITECTURE.md](docs/AGENT_ARCHITECTURE.md) (the
+pattern every agent is built from). The static-image and email sub-agents are documented in
+[docs/agents/STATIC_AD_AGENT.md](docs/agents/STATIC_AD_AGENT.md) and
+[docs/agents/EMAIL_TEMPLATE_AGENT.md](docs/agents/EMAIL_TEMPLATE_AGENT.md).
 
 This guide gets the whole stack — PostgreSQL, the FastAPI backend, and the Next.js frontend — running
 locally on **Linux** or **Windows**, end to end.
@@ -149,7 +154,9 @@ Edit `.env`:
 # Required — must match whatever you set up in step 2
 DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/adgen
 
-# Required — the LLM provider every agent actually calls
+# Required — the LLM provider every agent actually calls, AND the image
+# generation provider (nano-banana, via kie.ai) the Producer agent uses to
+# generate real static ad images and email hero images. One key, both uses.
 KIE_API_KEY=your-kie-ai-key
 
 # Required in any environment beyond quick local testing — these have insecure
@@ -166,8 +173,7 @@ LOG_LEVEL=INFO
 ```
 
 > Note the `postgresql+psycopg2://` scheme specifically — this is a SQLAlchemy dialect prefix, not a plain
-> Postgres connection string. `.env.example` in this repo may show a different scheme; the one above is what
-> the application's `config.py` actually expects.
+> Postgres connection string. It's what `.env.example` already uses and what `config.py` actually expects.
 
 ### 3.4 Run database migrations
 
@@ -245,30 +251,69 @@ configured in `.env.local`.
 
 ---
 
-## 5. Verify it works end to end
+## 5. Load demo data (fastest way to see it working)
 
-With both servers running:
+The quickest way to confirm the whole stack works — without waiting on live LLM/image-generation calls — is
+to load a pre-built demo account: **3 real businesses, 7 products with real photos, 9 campaigns, and 20
+already-generated assets** (static image ads + rendered marketing emails), seeded straight into your own
+account.
+
+1. Sign up (`POST /api/v1/auth/signup` from `/docs`, or the frontend's sign-up screen) — the response
+   includes an `access_token` you can use immediately, no separate login step needed.
+2. `POST /api/v1/seed/demo-data`, authenticated as that new user (in Swagger: click **Authorize**, paste the
+   `access_token`). Takes a few seconds — it's copying files and inserting DB rows, no network calls.
+3. Open the frontend at `http://localhost:3000` and log in — you'll see 3 businesses, each with real
+   products (with photos), and campaigns already sitting at `done` with real generated assets in the asset
+   gallery (open one to see an actual generated image or a rendered email).
+
+This is safe to call on any fresh account — it refuses (`409`) if the account already has businesses, unless
+you explicitly pass `?force=true` (which adds the demo data alongside whatever's already there, rather than
+replacing it).
+
+> **Maintainer note**: the demo snapshot itself lives at `seed_data/` (fixture JSON + copied files), produced
+> by `python -m scripts.export_seed_data --email <account>`. Re-run that against any real account to refresh
+> what gets seeded — the seed endpoint always reads from `seed_data/`, never talks to the source account
+> directly.
+
+---
+
+## 6. Or: run a full campaign live, end to end
+
+To actually watch the agents work in real time (real LLM calls, real image generation) rather than look at
+pre-generated data:
 
 1. Open `http://localhost:8000/docs`.
 2. `POST /api/v1/auth/signup` — create a user (the Swagger example has prefilled test credentials you can
    use directly).
 3. `POST /api/v1/businesses` — onboard a business via the form-path fields (see
    [docs/ARCHITECTURE.md §5](docs/ARCHITECTURE.md#5-business-onboarding--bko) for the full field set, or use
-   `examples/bko_input_form.json` as a starting payload).
+   `examples/bko_input_form.json` as a starting payload). Optionally follow up with
+   `POST /api/v1/businesses/{id}/logo` and `POST /api/v1/businesses/{id}/products` (+ that product's
+   `/images` endpoint) to give the Producer agent real brand assets to ground generation in — without these,
+   it still generates images, just without a real product/logo reference.
 4. `POST /api/v1/campaigns` — launch a campaign for that business (see `examples/campaign_input_form.json`
    for a sample brief). This returns immediately; the pipeline runs in the background.
 5. Either poll `GET /api/v1/campaigns/{id}` for status, or open the frontend at `http://localhost:3000`,
-   log in, and watch the campaign's live activity feed (backed by the SSE stream).
-6. When the campaign reaches `awaiting_review`, respond via `POST /api/v1/campaigns/{id}/resume`
-   (`{"approved": true}`) from Swagger, or approve/reject from the frontend review panel.
+   log in, and watch the campaign's live activity feed (backed by the SSE stream) — including the Producer
+   agent's own step-by-step progress as it plans and generates each asset.
+6. When the campaign reaches `awaiting_review` (this happens twice — after research, and after the
+   strategy is planned), respond via `POST /api/v1/campaigns/{id}/resume` (`{"approved": true}`) from
+   Swagger, or approve/reject from the frontend review panel.
+7. Once past the second approval, the Producer agent actually generates each asset — check
+   `generations/{campaign_id}/image/` and `generations/{campaign_id}/email/` for the real output files as
+   they land, alongside the JSON artifacts (`research_report.json`, `strategy_doc.json`) written earlier in
+   the run.
 
-You should see the Researcher and Strategist actually run (real LLM calls against kie.ai) and produce a
-research report and a full strategy document — check `generations/{campaign_id}/` for the JSON artifacts
-written along the way.
+**Current agent status**, so expectations match reality:
 
-> The Producer and Auditor stages are still prospected — see
-> [docs/ARCHITECTURE.md §9](docs/ARCHITECTURE.md#9-agent-layer) — so the pipeline currently completes with
-> the Strategist's output as the meaningful end result.
+| Agent | Status |
+|---|---|
+| Researcher | Real — live web search, produces a full research report |
+| Strategist | Real — full plan → produce → assemble pipeline |
+| Producer — static image sub-agent | Real — generates real images via nano-banana, grounded in real brand assets when available |
+| Producer — email sub-agent | Real — renders a real HTML email from one of 4 templates, including a generated hero image |
+| Producer — video ad sub-agent | **Not built** — no video/voice generation provider exists yet; `video_ad` assets in a campaign are silently skipped, not generated |
+| Auditor | **Stub** — every asset gets fixed scores and always passes; no real evaluation happens yet |
 
 ---
 
@@ -282,3 +327,6 @@ written along the way.
 | A campaign gets created but nothing happens | `KIE_API_KEY` missing or invalid | The app starts fine without it, but every agent call will fail immediately — check the backend logs for the actual error and confirm `.env` has a real key |
 | PowerShell won't run `Activate.ps1` | Default execution policy blocks scripts | `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`, then retry |
 | `uvloop` fails to install on Windows | It's a Unix-only package | Already handled by a platform marker in `requirements.txt` — if you still hit this, you're likely using a stale requirements file |
+| `POST /seed/demo-data` returns `404 No seed data found` | `seed_data/fixtures.json` doesn't exist in your checkout | Either it wasn't included in your clone, or you're running from a different working directory — run `python -m scripts.export_seed_data --email <account>` against a real account to (re)generate it, or copy an existing `seed_data/` folder in |
+| `POST /seed/demo-data` returns `409` | The account already has businesses | Expected — it's a safety guard, not a bug. Pass `?force=true` if you deliberately want to add the demo data alongside existing data |
+| A campaign's static image / email assets never appear, stay stuck, or fail | `KIE_API_KEY` invalid, or nano-banana generation timed out (it polls for up to ~6 minutes per image) | Check backend logs for the actual provider error; a slow/failed generation shows up as one `GeneratedAsset(status="failed")` for that asset, not a crashed campaign |
