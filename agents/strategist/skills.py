@@ -30,7 +30,7 @@ logger = get_logger(__name__)
 
 _COPY_LLM_CONFIG = LLMConfig(
     provider="kie",
-    model_name="gemini-2.5-flash",
+    model_name="gemini-3-6-flash-openai",
     temperature=0.6,   # copy benefits from creative variation
     max_tokens=2500,
 )

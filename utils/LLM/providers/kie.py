@@ -45,12 +45,15 @@ class KieChatOpenAI(ChatOpenAI):
 # ChatOpenAI appends /chat/completions to base_url, so we set:
 #   base_url = https://api.kie.ai/{model_name}/v1
 
-# Models confirmed available on kie.ai
+# Models confirmed available on kie.ai. As of 2026-09-30, kie.ai renamed its
+# chat-completion channels — the old dotted names (gemini-2.5-flash, etc.)
+# now 200 with {"code":422,"msg":"The model/channel is not supported"} instead
+# of a real completion (see KieChatOpenAI's docstring for why that's a nasty
+# failure mode: it looks like a normal response, not an HTTP error). The new
+# scheme uses dashes and an explicit "-openai" suffix for the OpenAI-compatible
+# endpoint specifically. Verified live against the real API before adopting.
 KIE_MODELS = {
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
+    "gemini-3-6-flash-openai",
 }
 
 

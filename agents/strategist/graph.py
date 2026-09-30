@@ -69,7 +69,7 @@ EventCallback = Callable[[str, dict], None]
 
 _PLANNER_LLM_CONFIG = LLMConfig(
     provider="kie",
-    model_name="gemini-2.5-flash",
+    model_name="gemini-3-6-flash-openai",
     temperature=0.4,   # planning = structured decisions
     max_tokens=4000,
 )

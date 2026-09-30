@@ -2,7 +2,7 @@
 
 Each constant is the full system prompt for one skill: persona + domain
 playbook + output contract. This knowledge is static — it lives here in the
-prompt, not in the model's head, so gemini-2.5-flash only has to execute it.
+prompt, not in the model's head, so the flash model only has to execute it.
 
 These strings are used verbatim (never .format()-ed), so JSON examples use
 normal single braces.

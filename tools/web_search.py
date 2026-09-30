@@ -17,7 +17,7 @@ def _kie_search(query: str) -> str:
     if not api_key:
         return "Error: KIE_API_KEY not set in environment."
 
-    url = "https://api.kie.ai/gemini-2.5-flash/v1/chat/completions"
+    url = "https://api.kie.ai/gemini-3-6-flash-openai/v1/chat/completions"
     resp = requests.post(
         url,
         headers={
@@ -44,7 +44,7 @@ def _kie_search(query: str) -> str:
             "stream": False,
             "include_thoughts": False,
         },
-        timeout=60,
+        timeout=120,
     )
 
     if resp.status_code != 200:

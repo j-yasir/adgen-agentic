@@ -24,7 +24,7 @@ def deep_competitor_analysis(competitor_name: str, industry: str) -> str:
 
     llm = LLMService(LLMConfig(
         provider="kie",
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3-6-flash-openai",
         temperature=0.3,
         max_tokens=3000,
     ))
@@ -72,7 +72,7 @@ def research_platform_trends(platform: str, industry: str, objective: str) -> st
 
     llm = LLMService(LLMConfig(
         provider="kie",
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3-6-flash-openai",
         temperature=0.3,
         max_tokens=2000,
     ))

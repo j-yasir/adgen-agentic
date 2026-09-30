@@ -42,14 +42,14 @@ logger = get_logger(__name__)
 
 _PLANNING_LLM_CONFIG = LLMConfig(
     provider="kie",
-    model_name="gemini-2.5-flash",
+    model_name="gemini-3-6-flash-openai",
     temperature=0.5,
     max_tokens=2000,
 )
 
 _LAYOUT_LLM_CONFIG = LLMConfig(
     provider="kie",
-    model_name="gemini-2.5-flash",
+    model_name="gemini-3-6-flash-openai",
     temperature=0.4,
     max_tokens=500,   # small — this call never sees or writes copy
 )

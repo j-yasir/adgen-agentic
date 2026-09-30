@@ -18,7 +18,7 @@ researcher_agent = AgentBuilder(
     skills=[deep_competitor_analysis, research_platform_trends],
     llm_config=LLMConfig(
         provider="kie",
-        model_name="gemini-2.5-flash",
+        model_name="gemini-3-6-flash-openai",
         temperature=0.3,
         max_tokens=8000,
     ),
