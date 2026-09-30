@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
 from utils.LLM.ai_service import LLMService
 from utils.LLM.schemas import LLMConfig, GenerationRequest
@@ -102,3 +104,43 @@ def research_platform_trends(platform: str, industry: str, objective: str) -> st
         ),
     ))
     return synthesis
+
+
+def content_to_text(content) -> str:
+    """Gemini via kie sometimes returns a list of content parts instead of a
+    plain string — mirrors agents/strategist/skills.py's own helper."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [p.get("text", "") if isinstance(p, dict) else str(p) for p in content]
+        return "".join(parts)
+    return str(content)
+
+
+async def repair_research_report(
+    llm: BaseChatModel, messages: list[BaseMessage], bad_output: str,
+) -> str:
+    """One corrective turn after a degenerate final answer.
+
+    No tools bound (the caller passes the agent's own base `.llm`, from
+    before create_react_agent wraps/binds it), so this can't wander off
+    calling more tools — it must synthesize the report from what's already in
+    `messages` (the full conversation, including every tool result already
+    gathered). Mirrors the Strategist's own repair-turn pattern
+    (agents/strategist/skills.py::_generate_validated): quote the failure
+    back, ask once more, no more than one retry.
+    """
+    repair_prompt = (
+        "Your previous final answer was incomplete — it was not a real "
+        "research report:\n\n"
+        f"{bad_output[:500]}\n\n"
+        "Using the search results and analysis already gathered above in this "
+        "conversation, produce the COMPLETE research report now as a single "
+        "JSON object with these top-level fields: competitor_ad_patterns, "
+        "platform_insights, audience_intelligence, asset_type_insights, "
+        "seasonal_context, recommended_angles, tone_recommendations, sources. "
+        "Do not call any more tools — synthesize from what you already found. "
+        "Emit the JSON object now, nothing else."
+    )
+    response = await llm.ainvoke(messages + [HumanMessage(content=repair_prompt)])
+    return content_to_text(response.content)

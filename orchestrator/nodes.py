@@ -13,6 +13,8 @@ from utils.logger import get_logger
 from utils.storage import save_generation
 
 from agents.researcher.agent import researcher_agent
+from agents.researcher.skills import content_to_text, repair_research_report
+from agents.researcher.validation import is_substantive_report
 from agents.strategist.graph import strategist_pipeline
 from agents.strategist.validation import parse_json_object
 from agents.producer.graph import producer_agent
@@ -258,16 +260,45 @@ async def run_researcher(state: CampaignState) -> dict:
         )
 
         final_msg = result["messages"][-1]
-        if isinstance(final_msg.content, str):
+        final_text = content_to_text(final_msg.content)
+        try:
+            # Fence-tolerant: the model often wraps JSON in ```json blocks.
+            research_report = parse_json_object(final_text)
+        except ValueError:
+            research_report = {"raw_output": final_text}
+
+        # A response can be syntactically valid JSON but substantively
+        # useless — e.g. the model's final synthesis degenerating into a
+        # small unrelated fragment instead of the real report. Pydantic
+        # validation alone can't catch this (every ResearchReport field has
+        # a default, so an empty report would still validate). One cheap,
+        # tool-free repair turn before treating this as a real failure.
+        if not is_substantive_report(research_report):
+            logger.warning(
+                "Researcher final answer was not substantive campaign_id=%s — "
+                "attempting one repair turn", state["campaign_id"],
+            )
+            db_repair = _db()
             try:
-                # Fence-tolerant: the model often wraps JSON in ```json blocks.
-                research_report = parse_json_object(final_msg.content)
+                _emit(db_repair, state["campaign_id"], "agent_error", "researcher", {
+                    "message": "Initial research synthesis was incomplete — retrying synthesis…",
+                })
+            finally:
+                db_repair.close()
+
+            repaired_text = await repair_research_report(
+                researcher_agent.llm, result["messages"], final_text,
+            )
+            try:
+                research_report = parse_json_object(repaired_text)
             except ValueError:
-                research_report = {"raw_output": final_msg.content}
-        elif isinstance(final_msg.content, dict):
-            research_report = final_msg.content
-        else:
-            research_report = {"raw_output": str(final_msg.content)}
+                research_report = {"raw_output": repaired_text}
+
+            if not is_substantive_report(research_report):
+                raise ValueError(
+                    "Researcher failed to produce a substantive research report "
+                    "even after a repair attempt."
+                )
 
         db2 = _db()
         try:

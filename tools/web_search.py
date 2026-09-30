@@ -18,39 +18,54 @@ def _kie_search(query: str) -> str:
         return "Error: KIE_API_KEY not set in environment."
 
     url = "https://api.kie.ai/gemini-3-6-flash-openai/v1/chat/completions"
-    resp = requests.post(
-        url,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "adgen-agentic/1.0",
-        },
-        json={
-            "messages": [
-                {
-                    "role": "system",
-                    "content": [{"type": "text", "text": (
-                        "You are a research assistant. Search the web and return "
-                        "comprehensive, factual results. Include specific data points, "
-                        "names, URLs, and dates. Structure your findings clearly."
-                    )}],
-                },
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": query}],
-                },
-            ],
-            "tools": [{"type": "function", "function": {"name": "googleSearch"}}],
-            "stream": False,
-            "include_thoughts": False,
-        },
-        timeout=120,
-    )
+
+    # A slow/failed search must degrade to a string the agent can see and
+    # react to (try a different query, proceed without it) — never let a
+    # network-level exception propagate and crash the whole agent run. Mirrors
+    # the "one failed asset must never cost the whole batch" philosophy
+    # already used in the Producer agent.
+    try:
+        resp = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "adgen-agentic/1.0",
+            },
+            json={
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": [{"type": "text", "text": (
+                            "You are a research assistant. Search the web and return "
+                            "comprehensive, factual results. Include specific data points, "
+                            "names, URLs, and dates. Structure your findings clearly."
+                        )}],
+                    },
+                    {
+                        "role": "user",
+                        "content": [{"type": "text", "text": query}],
+                    },
+                ],
+                "tools": [{"type": "function", "function": {"name": "googleSearch"}}],
+                "stream": False,
+                "include_thoughts": False,
+            },
+            timeout=120,
+        )
+    except requests.exceptions.Timeout:
+        return f"Search failed: kie.ai did not respond within 120s for query: {query[:150]}"
+    except requests.exceptions.RequestException as e:
+        return f"Search failed: network error — {e}"
 
     if resp.status_code != 200:
         return f"Search failed (HTTP {resp.status_code}): {resp.text[:300]}"
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        return f"Search failed: response was not valid JSON: {resp.text[:300]}"
+
     content = (
         data.get("choices", [{}])[0]
         .get("message", {})
